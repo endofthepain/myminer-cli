@@ -1,4 +1,4 @@
-# ORE CLI
+# FORK of ORE CLI
 
 A command line interface for ORE cryptocurrency mining.
 
