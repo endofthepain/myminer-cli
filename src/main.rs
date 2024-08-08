@@ -30,9 +30,9 @@ use solana_sdk::{
 
 struct Miner {
     pub keypair_filepath: Option<String>,
-    pub priority_fee: Option<u64>,
+    pub dynamic_fee: bool,
     pub dynamic_fee_url: Option<String>,
-    pub dynamic_fee_strategy: Option<String>,
+    pub dynamic_fee: bool,
     pub dynamic_fee_max: Option<u64>,
     pub rpc_client: Arc<RpcClient>,
     pub fee_payer_filepath: Option<String>,
@@ -131,14 +131,9 @@ struct Args {
     )]
     dynamic_fee_url: Option<String>,
 
-    #[arg(
-        long,
-        value_name = "DYNAMIC_FEE_STRATEGY",
-        help = "Strategy to use for dynamic fee estimation. Must be one of 'helius', 'triton', or 'alchemy'.",
-        default_value = "alchemy",
-        global = true
-    )]
-    dynamic_fee_strategy: Option<String>,
+    #[arg(long, help = "Use dynamic priority fees", global = true)]
+    dynamic_fee: bool,
+
     #[arg(
         long,
         value_name = "DYNAMIC_FEE_MAX",
@@ -179,7 +174,7 @@ async fn main() {
         args.priority_fee,
         Some(default_keypair),
         args.dynamic_fee_url,
-        args.dynamic_fee_strategy,
+        args.dynamic_fee,
         args.dynamic_fee_max,
         Some(fee_payer_filepath),
     ));
@@ -232,7 +227,7 @@ impl Miner {
         priority_fee: Option<u64>,
         keypair_filepath: Option<String>,
         dynamic_fee_url: Option<String>,
-        dynamic_fee_strategy: Option<String>,
+        dynamic_fee: bool,
         dynamic_fee_max: Option<u64>,
         fee_payer_filepath: Option<String>,
     ) -> Self {
@@ -241,7 +236,7 @@ impl Miner {
             keypair_filepath,
             priority_fee,
             dynamic_fee_url,
-            dynamic_fee_strategy,
+            dynamic_fee,
             dynamic_fee_max,
             fee_payer_filepath,
         }

@@ -20,7 +20,7 @@ use solana_transaction_status::{TransactionConfirmationStatus, UiTransactionEnco
 
 use crate::Miner;
 
-const MIN_SOL_BALANCE: f64 = 0.0005;
+const MIN_SOL_BALANCE: f64 = 0.00001;
 
 const RPC_RETRIES: usize = 0;
 const _SIMULATION_RETRIES: usize = 4;
@@ -47,18 +47,9 @@ impl Miner {
         let fee_payer = self.fee_payer();
 
         // Return error, if balance is zero
-        if let Ok(balance) = client.get_balance(&fee_payer.pubkey()).await {
-            if balance <= sol_to_lamports(MIN_SOL_BALANCE) {
-                panic!(
-                    "{} Insufficient balance: {} SOL\nPlease top up with at least {} SOL",
-                    "ERROR".bold().red(),
-                    lamports_to_sol(balance),
-                    MIN_SOL_BALANCE
-                );
-            }
-        }
+        self.check_balance().await;
 
-        // Set compute units
+        // Set compute budget
         let mut final_ixs = vec![];
         match compute_budget {
             ComputeBudget::Dynamic => {
@@ -71,10 +62,11 @@ impl Miner {
         }
 
         // Set compute unit price
-
         final_ixs.push(ComputeBudgetInstruction::set_compute_unit_price(
             self.priority_fee.unwrap_or(0),
         ));
+
+        // Add in user instructions
         final_ixs.extend_from_slice(ixs);
 
         // Build tx
@@ -93,14 +85,20 @@ impl Miner {
         loop {
             progress_bar.set_message(format!("Submitting transaction... (attempt {})", attempts,));
 
-            // Sign tx with a new blockhash
-            if attempts % 5 == 0 {
+            // Sign tx with a new blockhash (after approximately ~45 sec)
+            if attempts % 10 == 0 {
                 // Reset the compute unit price
-                if self.dynamic_fee_strategy.is_some() {
-                    let fee = self.dynamic_fee().await;
+                if self.dynamic_fee {
+                    let fee = if let Some(fee) = self.dynamic_fee().await {
+                        progress_bar.println(format!("  Priority fee: {} microlamports", fee));
+                        fee
+                    } else {
+                        let fee = self.priority_fee.unwrap_or(0);
+                        progress_bar.println(format!("  {} Dynamic fees not supported by this RPC. Falling back to static value: {} microlamports", "WARNING".bold().yellow(), fee));
+                        fee
+                    };
                     final_ixs.remove(1);
                     final_ixs.insert(1, ComputeBudgetInstruction::set_compute_unit_price(fee));
-                    progress_bar.println(format!("  Priority fee: {} microlamports", fee));
                 }
 
                 // Resign the tx
@@ -115,7 +113,7 @@ impl Miner {
                 }
             }
 
-            // Send transaction            
+            // Send transaction
             match client.send_transaction_with_config(&tx, send_cfg).await {
                 Ok(sig) => {
                     // Skip confirmation
@@ -193,5 +191,80 @@ impl Miner {
                 });
             }
         }
+    }
+
+    pub async fn check_balance(&self) {
+        // Throw error if balance is less than min
+        if let Ok(balance) = self
+            .rpc_client
+            .get_balance(&self.fee_payer().pubkey())
+            .await
+        {
+            if balance <= sol_to_lamports(MIN_SOL_BALANCE) {
+                panic!(
+                    "{} Insufficient balance: {} SOL\nPlease top up with at least {} SOL",
+                    "ERROR".bold().red(),
+                    lamports_to_sol(balance),
+                    MIN_SOL_BALANCE
+                );
+            }
+        }
+    }
+
+    // TODO
+    fn _simulate(&self) {
+
+        // Simulate tx
+        // let mut sim_attempts = 0;
+        // 'simulate: loop {
+        //     let sim_res = client
+        //         .simulate_transaction_with_config(
+        //             &tx,
+        //             RpcSimulateTransactionConfig {
+        //                 sig_verify: false,
+        //                 replace_recent_blockhash: true,
+        //                 commitment: Some(self.rpc_client.commitment()),
+        //                 encoding: Some(UiTransactionEncoding::Base64),
+        //                 accounts: None,
+        //                 min_context_slot: Some(slot),
+        //                 inner_instructions: false,
+        //             },
+        //         )
+        //         .await;
+        //     match sim_res {
+        //         Ok(sim_res) => {
+        //             if let Some(err) = sim_res.value.err {
+        //                 println!("Simulaton error: {:?}", err);
+        //                 sim_attempts += 1;
+        //             } else if let Some(units_consumed) = sim_res.value.units_consumed {
+        //                 if dynamic_cus {
+        //                     println!("Dynamic CUs: {:?}", units_consumed);
+        //                     let cu_budget_ix = ComputeBudgetInstruction::set_compute_unit_limit(
+        //                         units_consumed as u32 + 1000,
+        //                     );
+        //                     let cu_price_ix =
+        //                         ComputeBudgetInstruction::set_compute_unit_price(self.priority_fee);
+        //                     let mut final_ixs = vec![];
+        //                     final_ixs.extend_from_slice(&[cu_budget_ix, cu_price_ix]);
+        //                     final_ixs.extend_from_slice(ixs);
+        //                     tx = Transaction::new_with_payer(&final_ixs, Some(&signer.pubkey()));
+        //                 }
+        //                 break 'simulate;
+        //             }
+        //         }
+        //         Err(err) => {
+        //             println!("Simulaton error: {:?}", err);
+        //             sim_attempts += 1;
+        //         }
+        //     }
+
+        //     // Abort if sim fails
+        //     if sim_attempts.gt(&SIMULATION_RETRIES) {
+        //         return Err(ClientError {
+        //             request: None,
+        //             kind: ClientErrorKind::Custom("Simulation failed".into()),
+        //         });
+        //     }
+        // }
     }
 }
