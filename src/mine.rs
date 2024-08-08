@@ -93,28 +93,21 @@ impl Miner {
         // Dispatch job to each thread
         let progress_bar = Arc::new(spinner::new_progress_bar());
         progress_bar.set_message("Mining...");
-        let core_ids = core_affinity::get_core_ids().unwrap_or_else(|| {
-            panic!("Failed to get core IDs");
-        });
-        let global_best_difficulty = Arc::new(RwLock::new(0u32));
-        let handles: Vec<_> = core_ids
-            .into_iter()
+        let rt = tokio::runtime::Handle::current();
+        // inside the rayon threadpool the tokio runtime is not available.
+        // we access the runtime where it is available (outside of the pool) and spawn tasks directly on that runtime
+        let handles: Vec<_> = (0..cores)
+            .into_par_iter()
+            
             .map(|i| {
                 let global_best_difficulty = Arc::clone(&global_best_difficulty);
-                std::thread::spawn({
-                    let proof = proof.clone();
+                rt.spawn_blocking({
                     let progress_bar = progress_bar.clone();
                     let mut memory = equix::SolverMemory::new();
                     move || {
-                        if (i.id as u64) >= cores {
-                            return (0, 0, Hash::default());
-                        }
-
-                        let _ = core_affinity::set_for_current(i);
-
+                        
                         let timer = Instant::now();
-                        let mut nonce = u64::MAX.saturating_div(cores).saturating_mul(i.id as u64);
-                        let mut best_nonce = nonce;
+                        let mut nonce = u64::MAX.saturating_div(cores).saturating_mul(i);                        let mut best_nonce = nonce;
                         let mut best_difficulty = 0;
                         let mut best_hash = Hash::default();
                         loop {
@@ -148,7 +141,7 @@ impl Miner {
                                     if global_best_difficulty >= min_difficulty {
                                         break;
                                     }
-                                } else if i.id == 0 {
+                                } else if i == 0 {
                                     progress_bar.set_message(format!(
                                         "Mining... ({} / {} difficulty, {} sec remaining)",
                                         global_best_difficulty,
@@ -167,18 +160,22 @@ impl Miner {
             })
             .collect();
 
-        let mut best_nonce = 0;
-        let mut best_difficulty = 0;
-        let mut best_hash = Hash::default();
-        for h in handles {
-            if let Ok((nonce, difficulty, hash)) = h.join() {
-                if difficulty > best_difficulty {
-                    best_difficulty = difficulty;
-                    best_nonce = nonce;
-                    best_hash = hash;
-                }
-            }
-        }
+            let joined = futures::future::join_all(handles).await;
+
+            let (best_nonce, best_difficulty, best_hash) = joined.into_iter().fold(
+                (0, 0, Hash::default()),
+                |(best_nonce, best_difficulty, best_hash), h| {
+                    if let Ok((nonce, difficulty, hash)) = h {
+                        if difficulty > best_difficulty {
+                            (nonce, difficulty, hash)
+                        } else {
+                            (best_nonce, best_difficulty, best_hash)
+                        }
+                    } else {
+                        (best_nonce, best_difficulty, best_hash)
+                    }
+                },
+            );
 
         progress_bar.finish_with_message(format!(
             "Best hash: {} (difficulty: {})",
