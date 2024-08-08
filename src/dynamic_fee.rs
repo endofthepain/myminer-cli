@@ -17,6 +17,16 @@ impl Miner {
                 let client = Client::new();
 
                 let body = match strategy.as_str() {
+                    "alchemy" => {
+                        json!({
+                            "jsonrpc": "2.0",
+                            "id": "priority-fee-estimate",
+                            "method": "getRecentPrioritizationFees",
+                            "params": [
+                                ore_addresses,
+                            ]
+                        })
+                    }
                     "helius" => {
                         json!({
                             "jsonrpc": "2.0",
@@ -56,25 +66,43 @@ impl Miner {
                     .await
                     .unwrap();
 
-                let calculated_fee = match strategy.as_str() {
-                    "helius" => response["result"]["priorityFeeEstimate"]
-                        .as_f64()
-                        .map(|fee| fee as u64)
-                        .ok_or_else(|| {
-                            format!("Failed to parse priority fee. Response: {:?}", response)
-                        })
-                        .unwrap(),
-                    "triton" => response["result"]
-                        .as_array()
-                        .and_then(|arr| arr.last())
-                        .and_then(|last| last["prioritizationFee"].as_u64())
-                        .ok_or_else(|| {
-                            format!("Failed to parse priority fee. Response: {:?}", response)
-                        })
-                        .unwrap(),
-                    _ => return self.priority_fee.unwrap_or(0),
-                };
-
+                    let calculated_fee =
+                    match strategy.as_str() {
+                        "helius" => response["result"]["priorityFeeEstimate"]
+                            .as_f64()
+                            .map(|fee| fee as u64)
+                            .ok_or_else(|| {
+                                format!("Failed to parse priority fee. Response: {:?}", response)
+                            })
+                            .unwrap(),
+                        "triton" => response["result"]
+                            .as_array()
+                            .and_then(|arr| arr.last())
+                            .and_then(|last| last["prioritizationFee"].as_u64())
+                            .ok_or_else(|| {
+                                format!("Failed to parse priority fee. Response: {:?}", response)
+                            })
+                            .unwrap(),
+                        "alchemy" => response["result"]
+                            .as_array()
+                            .and_then(|arr| {
+                                Some(
+                                    arr.into_iter()
+                                        .map(|v| v["prioritizationFee"].as_u64().unwrap())
+                                        .collect::<Vec<u64>>(),
+                                )
+                            })
+                            .and_then(|fees| {
+                                Some((fees.iter().sum::<u64>() as f32 / fees.len() as f32).ceil()
+                                    as u64)
+                            })
+                            .ok_or_else(|| {
+                                format!("Failed to parse priority fee. Response: {:?}", response)
+                            })
+                            .unwrap(),
+                        _ => return self.priority_fee.unwrap_or(0),
+                    };
+                    
                 // Check if the calculated fee is higher than self.dynamic_fee_max
                 if let Some(max_fee) = self.dynamic_fee_max {
                     calculated_fee.min(max_fee)
