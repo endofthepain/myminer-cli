@@ -62,7 +62,7 @@ impl Miner {
                 proof,
                 cutoff_time,
                 args.cores,
-                config.min_difficulty as u32
+                args.min_difficulty // Ensure min_difficulty is used here
             ).await;
 
             // Submit most difficult hash
@@ -88,7 +88,7 @@ impl Miner {
         proof: Proof,
         cutoff_time: u64,
         cores: u64,
-        min_difficulty: u32,
+        min_difficulty: u32, // Ensure min_difficulty is a parameter here
     ) -> Solution {
         // Dispatch job to each thread
         let progress_bar = Arc::new(spinner::new_progress_bar());
