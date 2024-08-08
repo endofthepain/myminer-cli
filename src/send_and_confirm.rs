@@ -45,36 +45,7 @@ impl Miner {
         let client = self.rpc_client.clone();
         let fee_payer = self.fee_payer();
 
-        // Check if the balance is sufficient
-        self.check_balance(&client, &fee_payer).await?;
-
-        // Prepare transaction instructions
-        let mut final_ixs = self.prepare_instructions(ixs, compute_budget).await?;
-
-        // Build the transaction
-        let send_cfg = self.transaction_config();
-        let mut tx = Transaction::new_with_payer(&final_ixs, Some(&fee_payer.pubkey()));
-
-        // Submit and optionally confirm the transaction
-        let progress_bar = spinner::new_progress_bar();
-        self.submit_and_confirm_tx(
-            &client,
-            &signer,
-            &fee_payer,
-            &mut tx,
-            &mut final_ixs,
-            send_cfg,
-            &progress_bar,
-            skip_confirm,
-        )
-        .await
-    }
-
-    async fn check_balance(
-        &self,
-        client: &solana_client::nonblocking::rpc_client::RpcClient,
-        fee_payer: &dyn Signer,
-    ) -> ClientResult<()> {
+        // Check balance
         let balance = client.get_balance(&fee_payer.pubkey()).await?;
         if balance <= sol_to_lamports(MIN_SOL_BALANCE) {
             panic!(
@@ -84,69 +55,113 @@ impl Miner {
                 MIN_SOL_BALANCE
             );
         }
-        Ok(())
-    }
 
-    async fn prepare_instructions(
-        &self,
-        ixs: &[Instruction],
-        compute_budget: ComputeBudget,
-    ) -> ClientResult<Vec<Instruction>> {
+        // Set compute units
         let mut final_ixs = vec![];
         match compute_budget {
             ComputeBudget::Dynamic => {
-                // TODO: Implement dynamic compute budget
                 final_ixs.push(ComputeBudgetInstruction::set_compute_unit_limit(1_400_000));
             }
             ComputeBudget::Fixed(cus) => {
                 final_ixs.push(ComputeBudgetInstruction::set_compute_unit_limit(cus));
             }
         }
+
+        // Set compute unit price
         final_ixs.push(ComputeBudgetInstruction::set_compute_unit_price(
             self.priority_fee.unwrap_or(0),
         ));
         final_ixs.extend_from_slice(ixs);
-        Ok(final_ixs)
-    }
 
-    fn transaction_config(&self) -> RpcSendTransactionConfig {
-        RpcSendTransactionConfig {
+        // Build tx
+        let send_cfg = RpcSendTransactionConfig {
             skip_preflight: true,
             preflight_commitment: Some(CommitmentLevel::Confirmed),
             encoding: Some(UiTransactionEncoding::Base64),
             max_retries: Some(RPC_RETRIES),
             min_context_slot: None,
-        }
-    }
+        };
+        let mut tx = Transaction::new_with_payer(&final_ixs, Some(&fee_payer.pubkey()));
 
-    async fn submit_and_confirm_tx(
-        &self,
-        client: &solana_client::nonblocking::rpc_client::RpcClient,
-        signer: &dyn Signer,
-        fee_payer: &dyn Signer,
-        tx: &mut Transaction,
-        final_ixs: &mut Vec<Instruction>,
-        send_cfg: RpcSendTransactionConfig,
-        progress_bar: &indicatif::ProgressBar,
-        skip_confirm: bool,
-    ) -> ClientResult<Signature> {
+        // Create and configure progress bar
+        let progress_bar = ProgressBar::new_spinner();
+        progress_bar.set_style(
+            ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] {msg}")
+                .unwrap()
+                .tick_chars("/|\\- "),
+        );
+
+        // Submit tx
         let mut attempts = 0;
         loop {
             progress_bar.set_message(format!("Submitting transaction... (attempt {})", attempts));
 
+            // Sign tx with a new blockhash
             if attempts % 5 == 0 {
-                // Update the blockhash and resign the transaction
-                self.update_blockhash_and_resign_tx(client, signer, fee_payer, tx, final_ixs)
+                if self.dynamic_fee_strategy.is_some() {
+                    let fee = self.dynamic_fee().await?;
+                    final_ixs[1] = ComputeBudgetInstruction::set_compute_unit_price(fee);
+                    progress_bar.println(format!("  Priority fee: {} microlamports", fee));
+                }
+
+                let (hash, _slot) = client
+                    .get_latest_blockhash_with_commitment(self.rpc_client.commitment())
                     .await?;
+                tx.sign(&[&signer, &fee_payer], hash);
             }
 
-            match client.send_transaction_with_config(tx, send_cfg).await {
+            // Send transaction            
+            match client.send_transaction_with_config(&tx, send_cfg).await {
                 Ok(sig) => {
                     if skip_confirm {
                         progress_bar.finish_with_message(format!("Sent: {}", sig));
                         return Ok(sig);
                     }
-                    return self.confirm_tx(client, sig, progress_bar).await;
+
+                    // Confirm transaction
+                    for _ in 0..CONFIRM_RETRIES {
+                        tokio::time::sleep(Duration::from_millis(CONFIRM_DELAY)).await;
+                        match client.get_signature_statuses(&[sig]).await {
+                            Ok(signature_statuses) => {
+                                for status in signature_statuses.value {
+                                    if let Some(status) = status {
+                                        if let Some(err) = status.err {
+                                            progress_bar.finish_with_message(format!(
+                                                "{}: {}",
+                                                "ERROR".bold().red(),
+                                                err
+                                            ));
+                                            return Err(ClientError {
+                                                request: None,
+                                                kind: ClientErrorKind::Custom(err.to_string()),
+                                            });
+                                        }
+                                        if let Some(confirmation) = status.confirmation_status {
+                                            match confirmation {
+                                                TransactionConfirmationStatus::Confirmed
+                                                | TransactionConfirmationStatus::Finalized => {
+                                                    progress_bar.finish_with_message(format!(
+                                                        "{} {}",
+                                                        "OK".bold().green(),
+                                                        sig
+                                                    ));
+                                                    return Ok(sig);
+                                                }
+                                                _ => {}
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Err(err) => {
+                                progress_bar.set_message(format!(
+                                    "{}: {}",
+                                    "ERROR".bold().red(),
+                                    err.kind().to_string()
+                                ));
+                            }
+                        }
+                    }
                 }
                 Err(err) => {
                     progress_bar.set_message(format!(
@@ -157,7 +172,8 @@ impl Miner {
                 }
             }
 
-            sleep(Duration::from_millis(GATEWAY_DELAY)).await;
+            // Retry
+            tokio::time::sleep(Duration::from_millis(GATEWAY_DELAY)).await;
             attempts += 1;
             if attempts > GATEWAY_RETRIES {
                 progress_bar.finish_with_message(format!("{}: Max retries", "ERROR".bold().red()));
