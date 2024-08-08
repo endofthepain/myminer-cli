@@ -72,16 +72,6 @@ pub struct MineArgs {
     )]
     pub buffer_time: u64,
 
-    #[derive(Parser, Debug)]
-    pub struct ProofArgs {
-        #[arg(
-            index = 0,
-            value_name = "ADDRESS",
-            help = "The address of the proof to fetch"
-        )]
-        pub address: Option<String>,
-    }
-
     #[arg(
         long,
         short,
@@ -89,8 +79,17 @@ pub struct MineArgs {
         help = "The number to setup minimum Diff",
         default_value = "0"
     )]
-
     pub min_difficulty: u32,
+}
+
+#[derive(Parser, Debug)]
+pub struct ProofArgs {
+    #[arg(
+        index = 0,
+        value_name = "ADDRESS",
+        help = "The address of the proof to fetch"
+    )]
+    pub address: Option<String>,
 }
 
 #[derive(Parser, Debug)]
