@@ -1,12 +1,10 @@
 [package]
 name = "myore-cli"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 license = "Apache-2.0"
 description = "A Modification command line interface for ORE cryptocurrency mining."
-documentation = "https://ore.supply"
-homepage = "https://ore.supply"
-repository = "https://github.com/regolith-labs/ore-cli"
+repository = "https://github.com/endofthepain/myminer-cli"
 readme = "./README.md"
 keywords = ["solana", "crypto", "mining"]
 
