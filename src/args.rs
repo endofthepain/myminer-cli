@@ -53,6 +53,16 @@ pub struct ConfigArgs {}
 pub struct InitializeArgs {}
 
 #[derive(Parser, Debug)]
+pub struct ProofArgs {
+    #[arg(
+        index = 0,
+        value_name = "ADDRESS",
+        help = "The address of the proof to fetch"
+    )]
+    pub address: Option<String>,
+}
+
+#[derive(Parser, Debug)]
 pub struct MineArgs {
     #[arg(
         long,
@@ -80,16 +90,6 @@ pub struct MineArgs {
         default_value = "0"
     )]
     pub min_difficulty: u32,
-}
-
-#[derive(Parser, Debug)]
-pub struct ProofArgs {
-    #[arg(
-        index = 0,
-        value_name = "ADDRESS",
-        help = "The address of the proof to fetch"
-    )]
-    pub address: Option<String>,
 }
 
 #[derive(Parser, Debug)]
