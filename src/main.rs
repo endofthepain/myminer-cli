@@ -116,8 +116,8 @@ struct Args {
     #[arg(
         long,
         value_name = "MICROLAMPORTS",
-        help = "Price to pay for compute unit. If dynamic fee url is also set, this value will be the max.",
-        default_value = "500000",
+        help = "Number of microlamports to pay as priority fee per transaction",
+        default_value = "0",
         global = true
     )]
     priority_fee: Option<u64>,
@@ -138,6 +138,14 @@ struct Args {
         global = true
     )]
     dynamic_fee_strategy: Option<String>,
+    #[arg(
+        long,
+        value_name = "DYNAMIC_FEE_MAX",
+        help = "Maximum priority fee to use for dynamic fee estimation.",
+        default_value = "500000",
+        global = true
+    )]
+    dynamic_fee_max: Option<u64>,
 
     #[command(subcommand)]
     command: Commands,
@@ -171,6 +179,7 @@ async fn main() {
         Some(default_keypair),
         args.dynamic_fee_url,
         args.dynamic_fee_strategy,
+        args.dynamic_fee_max,
         Some(fee_payer_filepath),
     ));
 
@@ -223,6 +232,7 @@ impl Miner {
         keypair_filepath: Option<String>,
         dynamic_fee_url: Option<String>,
         dynamic_fee_strategy: Option<String>,
+        dynamic_fee_max: Option<u64>,
         fee_payer_filepath: Option<String>,
     ) -> Self {
         Self {
@@ -231,6 +241,7 @@ impl Miner {
             priority_fee,
             dynamic_fee_url,
             dynamic_fee_strategy,
+            dynamic_fee_max,
             fee_payer_filepath,
         }
     }

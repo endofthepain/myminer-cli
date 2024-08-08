@@ -110,7 +110,7 @@ impl Miner {
                     };
                     
                 // Check if the calculated fee is higher max
-                if let Some(max_fee) = self.priority_fee {
+                if let Some(max_fee) = self.dynamic_fee_max {
                     calculated_fee.min(max_fee)
                 } else {
                     calculated_fee
