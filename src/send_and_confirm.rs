@@ -18,6 +18,7 @@ use solana_sdk::{
 };
 use solana_transaction_status::{TransactionConfirmationStatus, UiTransactionEncoding};
 
+use crate::utils::get_latest_blockhash_with_retries;
 use crate::Miner;
 
 const MIN_SOL_BALANCE: f64 = 0.0005;
@@ -25,9 +26,9 @@ const MIN_SOL_BALANCE: f64 = 0.0005;
 const RPC_RETRIES: usize = 0;
 const _SIMULATION_RETRIES: usize = 4;
 const GATEWAY_RETRIES: usize = 150;
-const CONFIRM_RETRIES: usize = 1;
+const CONFIRM_RETRIES: usize = 8;
 
-const CONFIRM_DELAY: u64 = 0;
+const CONFIRM_DELAY: u64 = 500;
 const GATEWAY_DELAY: u64 = 0; //300;
 
 pub enum ComputeBudget {
@@ -92,10 +93,7 @@ impl Miner {
         let mut tx = Transaction::new_with_payer(&final_ixs, Some(&fee_payer.pubkey()));
 
         // Sign tx
-        let (hash, _slot) = client
-            .get_latest_blockhash_with_commitment(self.rpc_client.commitment())
-            .await
-            .unwrap();
+        let (hash, _slot) = get_latest_blockhash_with_retries(&client).await?;
 
         if signer.pubkey() == fee_payer.pubkey() {
             tx.sign(&[&signer], hash);
