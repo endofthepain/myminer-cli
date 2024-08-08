@@ -33,6 +33,7 @@ struct Miner {
     pub priority_fee: Option<u64>,
     pub dynamic_fee_url: Option<String>,
     pub dynamic_fee_strategy: Option<String>,
+    pub dynamic_fee_max: Option<u64>,
     pub rpc_client: Arc<RpcClient>,
     pub fee_payer_filepath: Option<String>,
 }
