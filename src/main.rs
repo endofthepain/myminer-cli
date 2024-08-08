@@ -30,6 +30,7 @@ use solana_sdk::{
 
 struct Miner {
     pub keypair_filepath: Option<String>,
+    pub priority_fee: Option<u64>,
     pub dynamic_fee_url: Option<String>,
     pub dynamic_fee: bool,
     pub dynamic_fee_max: Option<u64>,
