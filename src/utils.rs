@@ -9,14 +9,10 @@ use ore_api::{
     state::{Config, Proof, Treasury},
 };
 use ore_utils::AccountDeserialize;
-use solana_client::client_error::{ClientError, ClientErrorKind};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_program::{pubkey::Pubkey, sysvar};
-use solana_rpc_client::spinner;
-use solana_sdk::{clock::Clock, hash::Hash};
+use solana_sdk::clock::Clock;
 use spl_associated_token_account::get_associated_token_address;
-use std::time::Duration;
-use tokio::time::sleep;
 
 pub async fn _get_treasury(client: &RpcClient) -> Treasury {
     let data = client
