@@ -1,4 +1,5 @@
 use std::{sync::Arc, sync::RwLock, time::Instant};
+
 use colored::*;
 use drillx::{
     equix::{self},
@@ -27,10 +28,9 @@ impl Miner {
         let signer = self.signer();
         self.open().await;
 
-        // Check num threads
-        self.check_num_cores(args.threads);
+        // Check number of cores
+        self.check_num_cores(args.cores);
 
-        //show logs difference balance
         let mut diff_balance: u64 = 0;
 
         // Start mining loop
@@ -44,7 +44,7 @@ impl Miner {
                     "{} {}",
                     "+".green(),
                     amount_u64_to_string(diff_balance).green()
-                )
+                );
             }
 
             diff_balance = proof.balance;
@@ -61,14 +61,14 @@ impl Miner {
             let solution = Self::find_hash_par(
                 proof,
                 cutoff_time,
-                args.threads,
-                args.min_difficulty,
+                args.cores,
+                config.min_difficulty as u32
             ).await;
 
             // Submit most difficult hash
             let mut compute_budget = 500_000;
             let mut ixs = vec![ore_api::instruction::auth(proof_pubkey(signer.pubkey()))];
-            if self.should_reset(config).await && rand::thread_rng().gen_range(0..100).eq(&0) {
+            if self.should_reset(config).await && rand::thread_rng().gen_range(0..100) == 0 {
                 compute_budget += 100_000;
                 ixs.push(ore_api::instruction::reset(signer.pubkey()));
             }
@@ -87,17 +87,18 @@ impl Miner {
     async fn find_hash_par(
         proof: Proof,
         cutoff_time: u64,
-        threads: u64,
+        cores: u64,
         min_difficulty: u32,
     ) -> Solution {
-        let available_cores = num_cpus::get() as u64;
-        let threads = threads.min(available_cores);
-
         // Dispatch job to each thread
         let progress_bar = Arc::new(spinner::new_progress_bar());
         progress_bar.set_message("Mining...");
+        let core_ids = core_affinity::get_core_ids().unwrap_or_else(|| {
+            panic!("Failed to get core IDs");
+        });
         let global_best_difficulty = Arc::new(RwLock::new(0u32));
-        let handles: Vec<_> = (0..threads)
+        let handles: Vec<_> = core_ids
+            .into_iter()
             .map(|i| {
                 let global_best_difficulty = Arc::clone(&global_best_difficulty);
                 std::thread::spawn({
@@ -105,13 +106,18 @@ impl Miner {
                     let progress_bar = progress_bar.clone();
                     let mut memory = equix::SolverMemory::new();
                     move || {
+                        if (i.id as u64) >= cores {
+                            return (0, 0, Hash::default());
+                        }
+
+                        let _ = core_affinity::set_for_current(i);
+
                         let timer = Instant::now();
-                        let mut nonce = u64::MAX / threads * i;
+                        let mut nonce = u64::MAX.saturating_div(cores).saturating_mul(i.id as u64);
                         let mut best_nonce = nonce;
                         let mut best_difficulty = 0;
                         let mut best_hash = Hash::default();
                         loop {
-                            // Create hash
                             if let Ok(hx) = drillx::hash_with_memory(
                                 &mut memory,
                                 &proof.challenge,
@@ -129,22 +135,20 @@ impl Miner {
                                 }
                             }
 
-                            // Exit if time has elapsed
                             if nonce % 100 == 0 {
                                 let global_best_difficulty = *global_best_difficulty.read().unwrap();
                                 if timer.elapsed().as_secs() >= cutoff_time {
-                                    if i == 0 {
+                                    if i.id == 0 {
                                         progress_bar.set_message(format!(
                                             "Mining... ({} / {} difficulty)",
                                             global_best_difficulty,
                                             min_difficulty,
                                         ));
-                                    }
+                                    }    
                                     if global_best_difficulty >= min_difficulty {
-                                        // Mine until min difficulty has been met
                                         break;
                                     }
-                                } else if i == 0 {
+                                } else if i.id == 0 {
                                     progress_bar.set_message(format!(
                                         "Mining... ({} / {} difficulty, {} sec remaining)",
                                         global_best_difficulty,
@@ -154,18 +158,15 @@ impl Miner {
                                 }
                             }
 
-                            // Increment nonce
                             nonce += 1;
                         }
 
-                        // Return the best nonce
                         (best_nonce, best_difficulty, best_hash)
                     }
                 })
             })
             .collect();
 
-        // Join handles and return best nonce
         let mut best_nonce = 0;
         let mut best_difficulty = 0;
         let mut best_hash = Hash::default();
@@ -179,7 +180,6 @@ impl Miner {
             }
         }
 
-        // Update log
         progress_bar.finish_with_message(format!(
             "Best hash: {} (difficulty: {})",
             bs58::encode(best_hash.h).into_string(),
@@ -189,14 +189,13 @@ impl Miner {
         Solution::new(best_hash.d, best_nonce.to_le_bytes())
     }
 
-    pub fn check_num_cores(&self, threads: u64) {
-        // Check num threads
+    pub fn check_num_cores(&self, cores: u64) {
         let num_cores = num_cpus::get() as u64;
-        if threads > num_cores {
+        if cores > num_cores {
             println!(
                 "{} Number of threads ({}) exceeds available cores ({})",
                 "WARNING".bold().yellow(),
-                threads,
+                cores,
                 num_cores
             );
         }
@@ -226,7 +225,6 @@ fn calculate_multiplier(balance: u64, top_balance: u64) -> f64 {
     1.0 + (balance as f64 / top_balance as f64).min(1.0f64)
 }
 
-// TODO Pick a better strategy (avoid draining bus)
 fn find_bus() -> Pubkey {
     let i = rand::thread_rng().gen_range(0..BUS_COUNT);
     BUS_ADDRESSES[i]

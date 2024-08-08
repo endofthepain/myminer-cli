@@ -6,10 +6,9 @@ use serde_json::{json, Value};
 
 impl Miner {
     pub async fn dynamic_fee(&self) -> u64 {
-        let ore_addresses: Vec<String> =
-            std::iter::once("oreV2ZymfyeXgNgBdqMkumTqqAprVqgBWQfoYkrtKWQ".to_string())
-                .chain(BUS_ADDRESSES.iter().map(|pubkey| pubkey.to_string()))
-                .collect();
+        let ore_addresses: Vec<String> = std::iter::once(ore_api::ID.to_string())
+            .chain(BUS_ADDRESSES.iter().map(|pubkey| pubkey.to_string()))
+            .collect();
 
         match &self.dynamic_fee_strategy {
             None => self.priority_fee.unwrap_or(0),
@@ -56,8 +55,14 @@ impl Miner {
                     _ => return self.priority_fee.unwrap_or(0),
                 };
 
+                // Send request
+                let url = self
+                    .dynamic_fee_url
+                    .clone()
+                    .unwrap_or(self.rpc_client.url());
+                
                 let response: Value = client
-                    .post(self.dynamic_fee_url.as_ref().unwrap())
+                    .post(url)
                     .json(&body)
                     .send()
                     .await
@@ -66,6 +71,7 @@ impl Miner {
                     .await
                     .unwrap();
 
+                    // Parse fee
                     let calculated_fee =
                     match strategy.as_str() {
                         "helius" => response["result"]["priorityFeeEstimate"]
@@ -103,8 +109,8 @@ impl Miner {
                         _ => return self.priority_fee.unwrap_or(0),
                     };
                     
-                // Check if the calculated fee is higher than self.dynamic_fee_max
-                if let Some(max_fee) = self.dynamic_fee_max {
+                // Check if the calculated fee is higher max
+                if let Some(max_fee) = self.priority_fee {
                     calculated_fee.min(max_fee)
                 } else {
                     calculated_fee
