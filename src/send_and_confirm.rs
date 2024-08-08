@@ -18,7 +18,6 @@ use solana_sdk::{
 };
 use solana_transaction_status::{TransactionConfirmationStatus, UiTransactionEncoding};
 
-use crate::utils::get_latest_blockhash_with_retries;
 use crate::Miner;
 
 const MIN_SOL_BALANCE: f64 = 0.0005;
@@ -105,10 +104,7 @@ impl Miner {
                 }
 
                 // Resign the tx
-                let (hash, _slot) = client
-                    .get_latest_blockhash_with_commitment(self.rpc_client.commitment())
-                    .await
-                    .unwrap();
+                let (hash, _slot) = get_latest_blockhash_with_retries(&client).await.unwrap();
                 if signer.pubkey() == fee_payer.pubkey() {
                     tx.sign(&[&signer], hash);
                 } else {
