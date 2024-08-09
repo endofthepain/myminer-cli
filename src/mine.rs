@@ -1,5 +1,5 @@
 use std::{sync::Arc, sync::RwLock, time::Instant};
-
+use log::{info, warn, error};
 use colored::*;
 use drillx::{
     equix::{self},
@@ -34,7 +34,12 @@ impl Miner {
         // Check number of cores
         self.check_num_cores(args.cores);
 
-        let mut diff_balance: u64 = 0;
+        // Initialize tracking of transaction fees
+        let mut last_tx_fee = 0;
+        let mut total_sol_fees = 0;
+
+        // Log when mining starts
+        info!("Mining started...");
 
         // Start mining loop
         let mut last_hash_at = 0;
@@ -46,38 +51,30 @@ impl Miner {
                 get_updated_proof_with_authority(&self.rpc_client, signer.pubkey(), last_hash_at)
                     .await;
             last_hash_at = proof.last_hash_at;
-            if diff_balance != 0 {
-                diff_balance = proof.balance - diff_balance;
-                println!(
-                    "{} {}",
-                    "+".green(),
-                    amount_u64_to_string(diff_balance).green()
-                );
-            }
 
-            diff_balance = proof.balance;
-            println!(
-                "\nStake: {} ORE \n balance change:{} ORE\n Multiplier: {:12}x",
-                amount_u64_to_string(proof.balance),
-                amount_u64_to_string(proof.balance.saturating_sub(last_balance)),
-                calculate_multiplier(proof.balance, config.top_balance)
+            // Fetch SOL balance
+            let sol_balance = match self.fetch_sol_balance().await {
+                Ok(balance) => balance,
+                Err(_) => {
+                    error!("Failed to fetch SOL balance.");
+                    return;
+                }
+            };
+
+            // Log balance change and difficulty
+            info!(
+                "Balance change: {} ORE, Multiplier: {:12}x, SOL Balance: {:.4}, Last TX Fee: {:.4} SOL, Total SOL Fees: {:.4} SOL",
+                amount_u64_to_string(proof.balance.saturating_sub(last_balance)).green(),
+                format!("{:12}", calculate_multiplier(proof.balance, config.top_balance)).blue(),
+                sol_balance as f64 / 1_000_000_000.0,
+                last_tx_fee as f64 / 1_000_000_000.0,
+                total_sol_fees as f64 / 1_000_000_000.0,
             );
+
             last_balance = proof.balance;
 
-            // Calc cutoff time
-            let cutoff_time = self.get_cutoff(proof, args.buffer_time).await;
-
-            // Run drillx
-            let solution = Self::find_hash_par(
-                proof,
-                cutoff_time,
-                args.cores,
-                args.min_difficulty // Ensure min_difficulty is used here
-            ).await;
-            
-             // Apply dynamic fee logic
-             let priority_fee = if self.dynamic_fee {
-                // Calculate dynamic fee, ensuring it doesn't exceed dynamic_fee_max
+            // Apply dynamic fee logic
+            let priority_fee = if self.dynamic_fee {
                 let dynamic_fee = self.calculate_dynamic_fee().await;
                 if let Some(max_fee) = self.dynamic_fee_max {
                     dynamic_fee.min(max_fee)
@@ -89,10 +86,9 @@ impl Miner {
             };
 
             // Calculate the total compute budget, including the priority fee
-            let mut compute_budget = 500_000 + priority_fee;
+            let compute_budget = 500_000 + priority_fee;
             let mut ixs = vec![ore_api::instruction::auth(proof_pubkey(signer.pubkey()))];
             if self.should_reset(config).await && rand::thread_rng().gen_range(0..100) == 0 {
-                compute_budget += 100_000;
                 ixs.push(ore_api::instruction::reset(signer.pubkey()));
             }
 
@@ -100,24 +96,33 @@ impl Miner {
                 signer.pubkey(),
                 signer.pubkey(),
                 self.find_bus().await,
-                solution,
+                Self::find_hash_par(
+                    proof,
+                    self.get_cutoff(proof, args.buffer_time).await,
+                    args.cores,
+                    args.min_difficulty
+                ).await,
             ));
 
-            self.send_and_confirm(
-                &ixs, 
-                ComputeBudget::Fixed(compute_budget.try_into().unwrap()), 
-                false
+            // Submit transaction and track the fee
+            let result = self.send_and_confirm(
+                &ixs,
+                ComputeBudget::Fixed(compute_budget.try_into().unwrap()),
+                false,
             )
-            .await
-            .ok();
+            .await;
+
+            if let Ok(tx_result) = result {
+                last_tx_fee = priority_fee;
+                total_sol_fees += last_tx_fee;
+            } else {
+                last_tx_fee = 0;
+            }
         }
     }
 
-    // Add this method to calculate dynamic fee based on the dynamic_fee_url
+    // Add this method to calculate dynamic fee based on dynamic_fee_url
     async fn calculate_dynamic_fee(&self) -> u64 {
-        // Fetch dynamic fee based on dynamic_fee_url
-        // The actual implementation would depend on how you interact with the URL
-        // This is a placeholder implementation
         let response = reqwest::get(self.dynamic_fee_url.as_ref().unwrap())
             .await
             .unwrap()
@@ -236,9 +241,8 @@ impl Miner {
     pub fn check_num_cores(&self, cores: u64) {
         let num_cores = num_cpus::get() as u64;
         if cores > num_cores {
-            println!(
-                "{} Number of threads ({}) exceeds available cores ({})",
-                "WARNING".bold().yellow(),
+            warn!(
+                "Number of threads ({}) exceeds available cores ({})",
                 cores,
                 num_cores
             );
@@ -285,6 +289,11 @@ impl Miner {
         // Otherwise return a random bus
         let i = rand::thread_rng().gen_range(0..BUS_COUNT);
         BUS_ADDRESSES[i]
+    }
+
+    async fn fetch_sol_balance(&self) -> Result<u64, Box<dyn std::error::Error>> {
+        let account_info = self.rpc_client.get_account_info(&self.signer().pubkey()).await?;
+        Ok(account_info.lamports)
     }
 }
 

@@ -53,7 +53,6 @@ impl Miner {
         let mut final_ixs = vec![];
         match compute_budget {
             ComputeBudget::Dynamic => {
-                // TODO simulate
                 final_ixs.push(ComputeBudgetInstruction::set_compute_unit_limit(1_400_000))
             }
             ComputeBudget::Fixed(cus) => {
@@ -62,16 +61,14 @@ impl Miner {
         }
 
         // Set compute unit price
+        let dynamic_fee = if self.dynamic_fee {
+            self.dynamic_fee().await
+        } else {
+            Some(self.priority_fee.unwrap_or(0))
+        };
+
         final_ixs.push(ComputeBudgetInstruction::set_compute_unit_price(
-            if self.dynamic_fee {
-                if let Some(dynamic_fee) = self.dynamic_fee().await {
-                    dynamic_fee
-                }else{
-                    self.priority_fee.unwrap_or(0)
-                }
-            } else {
-                self.priority_fee.unwrap_or(0)
-            }        
+            dynamic_fee.unwrap_or(0)
         ));
 
         // Add in user instructions
@@ -97,19 +94,23 @@ impl Miner {
             if attempts % 10 == 0 {
                 // Reset the compute unit price
                 if self.dynamic_fee {
-                    if let Some(dynamic_fee) = self.dynamic_fee().await {
-                        progress_bar.println(format!("  Priority fee: {} microlamports", dynamic_fee));
-                        final_ixs.remove(1);
-                        final_ixs.insert(1, ComputeBudgetInstruction::set_compute_unit_price(dynamic_fee));
-                    } else {
-                        let fallback_fee = self.priority_fee.unwrap_or(0);
-                        progress_bar.println(format!(
-                            "{} Dynamic fees not supported by this RPC. Falling back to static value: {} microlamports",
-                            "WARNING".bold().yellow(),
-                            fallback_fee
-                        ));
-                        final_ixs.remove(1);
-                        final_ixs.insert(1, ComputeBudgetInstruction::set_compute_unit_price(fallback_fee));
+                    let dynamic_fee = self.dynamic_fee().await;
+                    match dynamic_fee {
+                        Some(dynamic_fee) => {
+                            progress_bar.println(format!("  Priority fee: {} microlamports", dynamic_fee));
+                            final_ixs.remove(1);
+                            final_ixs.insert(1, ComputeBudgetInstruction::set_compute_unit_price(dynamic_fee));
+                        }
+                        None => {
+                            let fallback_fee = self.priority_fee.unwrap_or(0);
+                            progress_bar.println(format!(
+                                "{} Dynamic fees not supported by this RPC. Falling back to static value: {} microlamports",
+                                "WARNING".bold().yellow(),
+                                fallback_fee
+                            ));
+                            final_ixs.remove(1);
+                            final_ixs.insert(1, ComputeBudgetInstruction::set_compute_unit_price(fallback_fee));
+                        }
                     }
                 }                
 
@@ -206,7 +207,6 @@ impl Miner {
     }
 
     pub async fn check_balance(&self) {
-        // Throw error if balance is less than min
         if let Ok(balance) = self
             .rpc_client
             .get_balance(&self.fee_payer().pubkey())

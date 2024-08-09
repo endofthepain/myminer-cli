@@ -1,47 +1,41 @@
 use crate::Miner;
-
 use ore_api::consts::BUS_ADDRESSES;
 use reqwest::Client;
 use serde_json::{json, Value};
 use url::Url;
 
+// Define the FeeStrategy enum
 enum FeeStrategy {
     Helius,
     Triton,
-    Alchemy,
 }
 
 impl Miner {
     pub async fn dynamic_fee(&self) -> Option<u64> {
-        // Get url
         let rpc_url = self
             .dynamic_fee_url
             .clone()
             .unwrap_or(self.rpc_client.url());
 
-        // Select fee estiamte strategy
         let host = Url::parse(&rpc_url)
             .unwrap()
             .host_str()
             .unwrap()
             .to_string();
+        
         let strategy = if host.contains("helius-rpc.com") {
             FeeStrategy::Helius
-        } else if host.contains("alchemy.com") {
-            FeeStrategy::Alchemy
-        }else if host.contains("pandaever.host") {
-            FeeStrategy::Alchemy
         } else if host.contains("rpcpool.com") {
             FeeStrategy::Triton
         } else {
             return None;
         };
 
-        // Build fee estimate request
         let client = Client::new();
         let ore_addresses: Vec<String> = std::iter::once(ore_api::ID.to_string())
             .chain(BUS_ADDRESSES.iter().map(|pubkey| pubkey.to_string()))
             .collect();
+        
         let body = match strategy {
             FeeStrategy::Helius => {
                 json!({
@@ -54,16 +48,6 @@ impl Miner {
                             "recommended": true
                         }
                     }]
-                })
-            }
-            FeeStrategy::Alchemy => {
-                json!({
-                    "jsonrpc": "2.0",
-                    "id": "priority-fee-estimate",
-                    "method": "getRecentPrioritizationFees",
-                    "params": [
-                        ore_addresses
-                    ]
                 })
             }
             FeeStrategy::Triton => {
@@ -81,7 +65,6 @@ impl Miner {
             }
         };
 
-        // Send request
         let response: Value = client
             .post(rpc_url)
             .json(&body)
@@ -92,30 +75,12 @@ impl Miner {
             .await
             .unwrap();
 
-        // Parse response
         let calculated_fee = match strategy {
             FeeStrategy::Helius => response["result"]["priorityFeeEstimate"]
                 .as_f64()
                 .map(|fee| fee as u64)
                 .ok_or_else(|| format!("Failed to parse priority fee. Response: {:?}", response))
                 .unwrap(),
-            FeeStrategy::Alchemy => response["result"]
-		.as_array()
-                .and_then(|arr| {
-			Some(
-				arr.into_iter()
-					.map(|v| v["prioritizationFee"].as_u64().unwrap())
-					.collect::<Vec<u64>>(),
-			)
-		})
-		.and_then(|fees| {
-			Some((fees.iter().sum::<u64>() as f32 / fees.len() as f32).ceil()
-			as u64)
-		})
-		.ok_or_else(|| {
-			format!("Failed to parse priority fee. Response: {:?}", response)
-		})
-		.unwrap(),
             FeeStrategy::Triton => response["result"]
                 .as_array()
                 .and_then(|arr| arr.last())
@@ -124,8 +89,7 @@ impl Miner {
                 .unwrap(),
         };
 
-        // Check if the calculated fee is higher than max
-        if let Some(max_fee) = self.priority_fee {
+        if let Some(max_fee) = self.dynamic_fee_max {
             Some(calculated_fee.min(max_fee))
         } else {
             Some(calculated_fee)
