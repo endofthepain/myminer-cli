@@ -102,7 +102,6 @@ impl Miner {
     ) -> Solution {
         // Dispatch job to each thread
         let progress_bar = Arc::new(spinner::new_progress_bar());
-        let global_best_difficulty = Arc::new(RwLock::new(0u32));
         progress_bar.set_message("Mining...");
         let core_ids = core_affinity::get_core_ids().unwrap_or_else(|| {
             panic!("Failed to get core IDs");
