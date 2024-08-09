@@ -1,5 +1,4 @@
 use std::{sync::Arc, sync::RwLock, time::Instant};
-use log::{info, warn, error};
 use colored::*;
 use drillx::{
     equix::{self},
@@ -34,16 +33,11 @@ impl Miner {
         // Check number of cores
         self.check_num_cores(args.cores);
 
-        // Initialize tracking of transaction fees
-        let mut last_tx_fee = 0;
-        let mut total_sol_fees = 0;
-
-        // Log when mining starts
-        info!("Mining started...");
-
-        // Start mining loop
+        // Initialize variables
         let mut last_hash_at = 0;
         let mut last_balance = 0;
+        
+        // Start mining loop
         loop {
             // Fetch proof
             let config = get_config(&self.rpc_client).await;
@@ -56,25 +50,14 @@ impl Miner {
             let sol_balance = match self.fetch_sol_balance().await {
                 Ok(balance) => balance,
                 Err(_) => {
-                    error!("Failed to fetch SOL balance.");
+                    println!("Failed to fetch SOL balance.");
                     return;
                 }
             };
 
-            // Log balance change and difficulty
-            info!(
-                "Balance change: {} ORE, Multiplier: {:12}x, SOL Balance: {:.4}, Last TX Fee: {:.4} SOL, Total SOL Fees: {:.4} SOL",
-                amount_u64_to_string(proof.balance.saturating_sub(last_balance)).green(),
-                format!("{:12}", calculate_multiplier(proof.balance, config.top_balance)).blue(),
-                sol_balance as f64 / 1_000_000_000.0,
-                last_tx_fee as f64 / 1_000_000_000.0,
-                total_sol_fees as f64 / 1_000_000_000.0,
-            );
-
-            last_balance = proof.balance;
-
             // Apply dynamic fee logic
             let priority_fee = if self.dynamic_fee {
+                // Calculate dynamic fee, ensuring it doesn't exceed dynamic_fee_max
                 let dynamic_fee = self.calculate_dynamic_fee().await;
                 if let Some(max_fee) = self.dynamic_fee_max {
                     dynamic_fee.min(max_fee)
@@ -100,28 +83,41 @@ impl Miner {
                     proof,
                     self.get_cutoff(proof, args.buffer_time).await,
                     args.cores,
-                    args.min_difficulty
+                    args.min_difficulty // Ensure min_difficulty is used here
                 ).await,
             ));
 
-            // Submit transaction and track the fee
-            let result = self.send_and_confirm(
+            // Submit transaction
+            let _result = self.send_and_confirm(
                 &ixs,
                 ComputeBudget::Fixed(compute_budget.try_into().unwrap()),
                 false,
             )
             .await;
 
-            if let Ok(tx_result) = result {
-                last_tx_fee = priority_fee;
-                total_sol_fees += last_tx_fee;
-            } else {
-                last_tx_fee = 0;
-            }
+            // Display information
+            println!(
+                "\n{}: {}\n{}: {}\n{}: {:12}x\n{}: {:.4} SOL",
+                "Stake".white().bold(),
+                amount_u64_to_string(proof.balance).yellow(),
+                "Balance change".white().bold(),
+                amount_u64_to_string(proof.balance.saturating_sub(last_balance)).green(),
+                "Multiplier".white().bold(),
+                format!("{:12}", Self::calculate_multiplier(proof.balance, config.top_balance)).blue(),
+                "SOL Balance".white().bold(),
+                sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
+            );
+
+            last_balance = proof.balance;
         }
     }
 
-    // Add this method to calculate dynamic fee based on dynamic_fee_url
+    async fn fetch_sol_balance(&self) -> Result<u64, solana_client::client_error::ClientError> {
+        let pubkey = self.signer().pubkey();
+        let balance = self.rpc_client.get_balance(&pubkey).await?;
+        Ok(balance)
+    }
+
     async fn calculate_dynamic_fee(&self) -> u64 {
         let response = reqwest::get(self.dynamic_fee_url.as_ref().unwrap())
             .await
@@ -137,7 +133,7 @@ impl Miner {
         proof: Proof,
         cutoff_time: u64,
         cores: u64,
-        min_difficulty: u32, // Ensure min_difficulty is a parameter here
+        min_difficulty: u32,
     ) -> Solution {
         // Dispatch job to each thread
         let progress_bar = Arc::new(spinner::new_progress_bar());
@@ -241,8 +237,9 @@ impl Miner {
     pub fn check_num_cores(&self, cores: u64) {
         let num_cores = num_cpus::get() as u64;
         if cores > num_cores {
-            warn!(
-                "Number of threads ({}) exceeds available cores ({})",
+            println!(
+                "{} Number of threads ({}) exceeds available cores ({})",
+                "WARNING".bold().yellow(),
                 cores,
                 num_cores
             );
@@ -291,12 +288,7 @@ impl Miner {
         BUS_ADDRESSES[i]
     }
 
-    async fn fetch_sol_balance(&self) -> Result<u64, Box<dyn std::error::Error>> {
-        let account_info = self.rpc_client.get_account_info(&self.signer().pubkey()).await?;
-        Ok(account_info.lamports)
+    fn calculate_multiplier(balance: u64, top_balance: u64) -> f64 {
+        1.0 + (balance as f64 / top_balance as f64).min(1.0f64)
     }
-}
-
-fn calculate_multiplier(balance: u64, top_balance: u64) -> f64 {
-    1.0 + (balance as f64 / top_balance as f64).min(1.0f64)
 }

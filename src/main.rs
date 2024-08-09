@@ -20,11 +20,6 @@ mod utils;
 
 use std::sync::Arc;
 
-use log::{info, warn, error};
-use log4rs::{Config, append::file::FileAppender, encode::pattern::PatternEncoder};
-use std::fs::File;
-use std::path::Path;
-
 use args::*;
 use clap::{command, Parser, Subcommand};
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -154,26 +149,6 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
-    // Set up logging configuration programmatically
-    let log_path = Path::new("output.log");
-
-    // Create a file appender
-    let file_appender = FileAppender::builder()
-        .build(log_path)
-        .unwrap();
-
-    // Create a pattern encoder
-    let encoder = PatternEncoder::new("{d(%Y-%m-%d %H:%M:%S)} {l} {t} - {m}{n}");
-
-    // Configure the log4rs logger
-    let config = Config::builder()
-        .appender(Appender::builder().build("file", Box::new(file_appender)))
-        .logger(Logger::builder().build("my_crate", LevelFilter::Info))
-        .build(Root::builder().appender("file").build(LevelFilter::Info))
-        .unwrap();
-
-    log4rs::init_config(config).unwrap();
-        
     let args = Args::parse();
 
     // Load the config file from custom path, the default path, or use default config values
@@ -244,7 +219,6 @@ async fn main() {
             miner.initialize().await;
         }
     }
-    info!("Mining started.");    
 }
 
 impl Miner {
