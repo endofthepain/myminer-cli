@@ -82,6 +82,20 @@ impl Miner {
                 compute_budget += 100_000;
                 ixs.push(ore_api::instruction::reset(signer.pubkey()));
             }
+            
+            // Apply dynamic fee logic
+            let priority_fee = if self.dynamic_fee {
+                // Calculate dynamic fee, ensuring it doesn't exceed dynamic_fee_max
+                let dynamic_fee = self.calculate_dynamic_fee().await;
+                if let Some(max_fee) = self.dynamic_fee_max {
+                    dynamic_fee.min(max_fee)
+                } else {
+                    dynamic_fee
+                }
+            } else {
+                self.priority_fee.unwrap_or(0)
+            };
+
             ixs.push(ore_api::instruction::mine(
                 signer.pubkey(),
                 signer.pubkey(),
@@ -92,6 +106,21 @@ impl Miner {
                 .await
                 .ok();
         }
+    }
+
+    // Add this method to calculate dynamic fee based on the dynamic_fee_url
+    async fn calculate_dynamic_fee(&self) -> u64 {
+        // Fetch dynamic fee based on dynamic_fee_url
+        // The actual implementation would depend on how you interact with the URL
+        // This is a placeholder implementation
+        let response = reqwest::get(self.dynamic_fee_url.as_ref().unwrap())
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+
+        response.parse::<u64>().unwrap_or(0)
     }
 
     async fn find_hash_par(
