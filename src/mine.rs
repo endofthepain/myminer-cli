@@ -74,17 +74,9 @@ impl Miner {
                 args.cores,
                 args.min_difficulty // Ensure min_difficulty is used here
             ).await;
-
-            // Submit most difficult hash
-            let mut ixs = vec![ore_api::instruction::auth(proof_pubkey(signer.pubkey()))];
-            let mut compute_budget = 500_000;
-            if self.should_reset(config).await && rand::thread_rng().gen_range(0..100) == 0 {
-                compute_budget += 100_000;
-                ixs.push(ore_api::instruction::reset(signer.pubkey()));
-            }
             
-            // Apply dynamic fee logic
-            let priority_fee = if self.dynamic_fee {
+             // Apply dynamic fee logic
+             let priority_fee = if self.dynamic_fee {
                 // Calculate dynamic fee, ensuring it doesn't exceed dynamic_fee_max
                 let dynamic_fee = self.calculate_dynamic_fee().await;
                 if let Some(max_fee) = self.dynamic_fee_max {
@@ -96,12 +88,21 @@ impl Miner {
                 self.priority_fee.unwrap_or(0)
             };
 
+            // Calculate the total compute budget, including the priority fee
+            let mut compute_budget = 500_000 + priority_fee;
+            let mut ixs = vec![ore_api::instruction::auth(proof_pubkey(signer.pubkey()))];
+            if self.should_reset(config).await && rand::thread_rng().gen_range(0..100) == 0 {
+                compute_budget += 100_000;
+                ixs.push(ore_api::instruction::reset(signer.pubkey()));
+            }
+
             ixs.push(ore_api::instruction::mine(
                 signer.pubkey(),
                 signer.pubkey(),
                 self.find_bus().await,
                 solution,
             ));
+
             self.send_and_confirm(&ixs, ComputeBudget::Fixed(compute_budget), false)
                 .await
                 .ok();
