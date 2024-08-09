@@ -1,4 +1,5 @@
 use std::time::Duration;
+use tokio::time::sleep;
 
 use colored::*;
 use solana_client::{
@@ -88,7 +89,7 @@ impl Miner {
         let progress_bar = spinner::new_progress_bar();
         let mut attempts = 0;
         loop {
-            progress_bar.set_message(format!("Submitting transaction... (attempt {})", attempts,));
+            progress_bar.set_message(format!("Submitting transaction... (attempt {})", attempts));
 
             // Sign tx with a new blockhash (after approximately ~45 sec)
             if attempts % 10 == 0 {
@@ -112,7 +113,7 @@ impl Miner {
                             final_ixs.insert(1, ComputeBudgetInstruction::set_compute_unit_price(fallback_fee));
                         }
                     }
-                }                
+                }
 
                 // Resign the tx
                 let (hash, _slot) = client
@@ -137,7 +138,8 @@ impl Miner {
 
                     // Confirm transaction
                     for _ in 0..CONFIRM_RETRIES {
-                        std::thread::sleep(Duration::from_millis(CONFIRM_DELAY));
+                        // Use asynchronous sleep
+                        sleep(Duration::from_millis(CONFIRM_DELAY)).await;
                         match client.get_signature_statuses(&[sig]).await {
                             Ok(signature_statuses) => {
                                 for status in signature_statuses.value {
@@ -194,7 +196,7 @@ impl Miner {
             }
 
             // Retry
-            std::thread::sleep(Duration::from_millis(GATEWAY_DELAY));
+            sleep(Duration::from_millis(GATEWAY_DELAY)).await;
             attempts += 1;
             if attempts > GATEWAY_RETRIES {
                 progress_bar.finish_with_message(format!("{}: Max retries", "ERROR".bold().red()));

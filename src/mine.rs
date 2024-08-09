@@ -19,7 +19,7 @@ use crate::{
     args::MineArgs,
     send_and_confirm::ComputeBudget,
     utils::{
-        amount_u64_to_string, get_clock, get_config, get_updated_proof_with_authority, proof_pubkey,
+        get_clock, get_config, get_updated_proof_with_authority, proof_pubkey,
     },
     Miner,
 };
@@ -97,15 +97,11 @@ impl Miner {
 
             // Display information
             println!(
-                "\n{}: {}\n{}: {}\n{}: {:12}x\n{}: {:.4} SOL",
-                "Stake".white().bold(),
-                amount_u64_to_string(proof.balance).yellow(),
-                "Balance change".white().bold(),
-                amount_u64_to_string(proof.balance.saturating_sub(last_balance)).green(),
-                "Multiplier".white().bold(),
-                format!("{:12}", Self::calculate_multiplier(proof.balance, config.top_balance)).blue(),
-                "SOL Balance".white().bold(),
-                sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
+                "\nSOL Balance: {}\nORE Stake: {}\nChange: {}\nMultiplier: {}",
+                format!("{:.9} SOL", sol_balance as f64 / 1_000_000_000.0).white().bold(),
+                format!("{:.9} ORE", proof.balance as f64 / 1_000_000_000.0).yellow(),
+                format!("{:+.9} ORE", proof.balance.saturating_sub(last_balance) as f64 / 1_000_000_000.0).green(),
+                format!("{:.15}", Self::calculate_multiplier(proof.balance, config.top_balance)).blue(),            
             );
 
             last_balance = proof.balance;

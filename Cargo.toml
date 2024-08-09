@@ -1,6 +1,6 @@
 [package]
 name = "myore-cli"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 license = "Apache-2.0"
 description = "A Modification command line interface for ORE cryptocurrency mining."
