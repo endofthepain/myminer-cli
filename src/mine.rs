@@ -38,6 +38,7 @@ impl Miner {
 
         // Start mining loop
         let mut last_hash_at = 0;
+        let mut last_balance = 0;
         loop {
             // Fetch proof
             let config = get_config(&self.rpc_client).await;
@@ -56,10 +57,12 @@ impl Miner {
 
             diff_balance = proof.balance;
             println!(
-                "\nStake: {} ORE\n  Multiplier: {:12}x",
+                "\nStake: {} ORE \n balance change:{} ORE\n Multiplier: {:12}x",
                 amount_u64_to_string(proof.balance),
+                amount_u64_to_string(proof.balance.saturating_sub(last_balance)),
                 calculate_multiplier(proof.balance, config.top_balance)
             );
+            last_balance = proof.balance;
 
             // Calc cutoff time
             let cutoff_time = self.get_cutoff(proof, args.buffer_time).await;
@@ -99,6 +102,7 @@ impl Miner {
     ) -> Solution {
         // Dispatch job to each thread
         let progress_bar = Arc::new(spinner::new_progress_bar());
+        let global_best_difficulty = Arc::new(RwLock::new(0u32));
         progress_bar.set_message("Mining...");
         let core_ids = core_affinity::get_core_ids().unwrap_or_else(|| {
             panic!("Failed to get core IDs");
