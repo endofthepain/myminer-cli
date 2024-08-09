@@ -20,7 +20,7 @@ use solana_transaction_status::{TransactionConfirmationStatus, UiTransactionEnco
 
 use crate::Miner;
 
-const MIN_SOL_BALANCE: f64 = 0.00001;
+const MIN_SOL_BALANCE: f64 = 0.005;
 
 const RPC_RETRIES: usize = 0;
 const _SIMULATION_RETRIES: usize = 4;
@@ -71,7 +71,7 @@ impl Miner {
                 }
             } else {
                 self.priority_fee.unwrap_or(0)
-            } 
+            }        
         ));
 
         // Add in user instructions
@@ -111,7 +111,7 @@ impl Miner {
                         final_ixs.remove(1);
                         final_ixs.insert(1, ComputeBudgetInstruction::set_compute_unit_price(fallback_fee));
                     }
-                }                     }
+                }                
 
                 // Resign the tx
                 let (hash, _slot) = client
