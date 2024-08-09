@@ -19,7 +19,7 @@ use crate::{
     args::MineArgs,
     send_and_confirm::ComputeBudget,
     utils::{
-        amount_u64_to_string,get_clock, get_config, get_updated_proof_with_authority, proof_pubkey,
+        amount_u64_to_string, get_clock, get_config, get_updated_proof_with_authority, proof_pubkey,
     },
     Miner,
 };
@@ -36,7 +36,7 @@ impl Miner {
         // Initialize variables
         let mut last_hash_at = 0;
         let mut last_balance = 0;
-        
+
         // Start mining loop
         loop {
             // Fetch proof
@@ -186,9 +186,8 @@ impl Miner {
                                         progress_bar.set_message(format!(
                                             "Mining... (difficulty {})",
                                             global_best_difficulty,
-                                            min_difficulty,
                                         ));
-                                    }    
+                                    }
                                     if global_best_difficulty >= min_difficulty {
                                         break;
                                     }
@@ -196,10 +195,8 @@ impl Miner {
                                     progress_bar.set_message(format!(
                                         "Mining... (difficulty {}, time {})",
                                         global_best_difficulty,
-                                        min_difficulty,
-                                        format_duration(
-                                            cutoff_time.saturating_sub(timer.elapsed().as_secs())
-                                                as u32
+                                        Self::format_duration(
+                                            (cutoff_time.saturating_sub(timer.elapsed().as_secs())) as u32
                                         ),
                                     ));
                                 }
@@ -299,5 +296,4 @@ impl Miner {
         let remaining_seconds = seconds % 60;
         format!("{:02}:{:02}", minutes, remaining_seconds)
     }
-    
 }

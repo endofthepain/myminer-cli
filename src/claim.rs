@@ -46,7 +46,6 @@ impl Miner {
                 }
                 benefiary_tokens
             }
-            None => self.initialize_ata().await,
         };
 
         // Parse amount to claim

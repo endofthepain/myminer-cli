@@ -25,7 +25,7 @@ use crate::Miner;
 const MIN_SOL_BALANCE: f64 = 0.00005;
 
 const RPC_RETRIES: usize = 0;
-const SIMULATION_RETRIES: usize = 4;
+//const SIMULATION_RETRIES: usize = 4;
 const GATEWAY_RETRIES: usize = 150;
 const CONFIRM_RETRIES: usize = 8;
 
@@ -64,7 +64,13 @@ impl Miner {
 
         // Set compute unit price
         let dynamic_fee = if self.dynamic_fee {
-            self.dynamic_fee().await
+            match self.dynamic_fee().await {
+                Ok(fee) => Some(fee),
+                Err(err) => {
+                    eprintln!("Failed to fetch dynamic fee: {}", err);
+                    None
+                }
+            }
         } else {
             Some(self.priority_fee.unwrap_or(0))
         };
@@ -99,9 +105,8 @@ impl Miner {
             if attempts % 10 == 0 {
                 // Reset the compute unit price
                 if self.dynamic_fee {
-                    let dynamic_fee = self.dynamic_fee().await;
-                    match dynamic_fee {
-                        Some(dynamic_fee) => {
+                    match self.dynamic_fee().await {
+                        Ok(dynamic_fee) => {
                             progress_bar.println(format!(
                                 "  Priority fee: {} microlamports",
                                 dynamic_fee
@@ -112,7 +117,7 @@ impl Miner {
                                 ComputeBudgetInstruction::set_compute_unit_price(dynamic_fee),
                             );
                         }
-                        None => {
+                        Err(_err) => {
                             let fallback_fee = self.priority_fee.unwrap_or(0);
                             progress_bar.println(format!(
                                 "{} Dynamic fees not supported by this RPC. Falling back to static value: {} microlamports",
@@ -123,8 +128,8 @@ impl Miner {
                             final_ixs.insert(
                                 1,
                                 ComputeBudgetInstruction::set_compute_unit_price(fallback_fee),
-                                tx = Transaction::new_with_payer(&final_ixs, Some(&fee_payer.pubkey()));
                             );
+                            tx = Transaction::new_with_payer(&final_ixs, Some(&fee_payer.pubkey()));
                         }
                     }
                 }

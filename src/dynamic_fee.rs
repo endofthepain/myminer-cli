@@ -33,7 +33,7 @@ impl Miner {
         } else if host.contains("alchemy.com") {
             FeeStrategy::Alchemy
         } else if host.contains("quiknode.pro") {
-            FeeStrategy::Quiknode    
+            FeeStrategy::Quicknode    
         } else {
             return Err("Dynamic fees not supported by this RPC.".to_string());
         };
@@ -98,10 +98,10 @@ impl Miner {
             .json(&body)
             .send()
             .await
-            .unwrap()
+            .map_err(|e| format!("Request failed: {}", e))?
             .json()
             .await
-            .unwrap();
+            .map_err(|e| format!("Failed to parse response: {}", e))?;
 
         // Parse response
         let calculated_fee = match strategy {
@@ -130,21 +130,23 @@ impl Miner {
                 .ok_or_else(|| format!("Failed to parse priority fee response: {:?}", response)),
             FeeStrategy::Triton => {
                 serde_json::from_value::<Vec<RpcPrioritizationFee>>(response["result"].clone())
-                    .map(|prioritization_fees| {
-                        estimate_prioritization_fee_micro_lamports(prioritization_fees)
-                    })
-                    .or_else(|error: serde_json::Error| {
-                        Err(format!(
-                            "Failed to parse priority fee response: {response:?}, error: {error}"
-                        ))
-                    })
+                    .map(|prioritization_fees| estimate_prioritization_fee_micro_lamports(prioritization_fees))
+                    .map_err(|error| format!(
+                        "Failed to parse priority fee response: {:?}, error: {}",
+                        response, error
+                    ))
             }
         };
 
-        if let Some(max_fee) = self.dynamic_fee_max {
-            Some(calculated_fee.min(max_fee))
-        } else {
-            Some(calculated_fee)
+        match calculated_fee {
+            Ok(fee) => {
+                if let Some(max_fee) = self.dynamic_fee_max {
+                    Ok(fee.min(max_fee))
+                } else {
+                    Ok(fee)
+                }
+            }
+            Err(e) => Err(e),
         }
     }
 }

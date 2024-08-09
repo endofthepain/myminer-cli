@@ -92,18 +92,17 @@ pub struct RewardsArgs {}
 #[derive(Parser, Debug)]
 pub struct StakeArgs {
     #[arg(
-        long,
         value_name = "AMOUNT",
-        help = "The amount of Ore to stake. Defaults to max."
+        help = "The amount of ORE to stake. Defaults to max."
     )]
     pub amount: Option<f64>,
 
     #[arg(
         long,
         value_name = "TOKEN_ACCOUNT_ADDRESS",
-        help = "Token account to send Ore from."
+        help = "Token account to send ORE from. Defaults to the associated token account."
     )]
-    pub sender: Option<String>,
+    pub token_account: Option<String>,
 }
 
 #[derive(Parser, Debug)]
