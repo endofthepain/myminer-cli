@@ -19,7 +19,7 @@ use crate::{
     args::MineArgs,
     send_and_confirm::ComputeBudget,
     utils::{
-        get_clock, get_config, get_updated_proof_with_authority, proof_pubkey,
+        amount_u64_to_string,get_clock, get_config, get_updated_proof_with_authority, proof_pubkey,
     },
     Miner,
 };
@@ -69,7 +69,7 @@ impl Miner {
             };
 
             // Calculate the total compute budget, including the priority fee
-            let compute_budget = 500_000 + priority_fee;
+            let compute_budget = 480_000 + priority_fee;
             let mut ixs = vec![ore_api::instruction::auth(proof_pubkey(signer.pubkey()))];
             if self.should_reset(config).await && rand::thread_rng().gen_range(0..100) == 0 {
                 ixs.push(ore_api::instruction::reset(signer.pubkey()));
@@ -95,13 +95,16 @@ impl Miner {
             )
             .await;
 
-            // Display information
             println!(
-                "\nSOL Balance: {}\nORE Stake: {}\nChange: {}\nMultiplier: {}",
-                format!("{:.9} SOL", sol_balance as f64 / 1_000_000_000.0).white().bold(),
-                format!("{:.11} ORE", proof.balance as f64 / 1_000_000_000.0).yellow(),
-                format!("{:+.11} ORE", proof.balance.saturating_sub(last_balance) as f64 / 1_000_000_000.0).green(),
-                format!("{:.15}", Self::calculate_multiplier(proof.balance, config.top_balance)).blue(),            
+                "\n{}: {}\n{}: {}\n{}: {:12}x\n{}: {:.9} SOL",
+                "Stake".white().bold(),
+                amount_u64_to_string(proof.balance).yellow(),
+                "Change".white().bold(),
+                amount_u64_to_string(proof.balance.saturating_sub(last_balance)).green(),
+                "Multiplier".white().bold(),
+                format!("{:12}", Self::calculate_multiplier(proof.balance, config.top_balance)).blue(),
+                "SOL Balance".white().bold(),
+                sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
             );
 
             last_balance = proof.balance;
