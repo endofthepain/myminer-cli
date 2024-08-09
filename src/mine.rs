@@ -99,8 +99,8 @@ impl Miner {
             println!(
                 "\nSOL Balance: {}\nORE Stake: {}\nChange: {}\nMultiplier: {}",
                 format!("{:.9} SOL", sol_balance as f64 / 1_000_000_000.0).white().bold(),
-                format!("{:.9} ORE", proof.balance as f64 / 1_000_000_000.0).yellow(),
-                format!("{:+.9} ORE", proof.balance.saturating_sub(last_balance) as f64 / 1_000_000_000.0).green(),
+                format!("{:.11} ORE", proof.balance as f64 / 1_000_000_000.0).yellow(),
+                format!("{:+.11} ORE", proof.balance.saturating_sub(last_balance) as f64 / 1_000_000_000.0).green(),
                 format!("{:.15}", Self::calculate_multiplier(proof.balance, config.top_balance)).blue(),            
             );
 
