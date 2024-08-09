@@ -103,9 +103,13 @@ impl Miner {
                 solution,
             ));
 
-            self.send_and_confirm(&ixs, ComputeBudget::Fixed(compute_budget), false)
-                .await
-                .ok();
+            self.send_and_confirm(
+                &ixs, 
+                ComputeBudget::Fixed(compute_budget.try_into().unwrap()), 
+                false
+            )
+            .await
+            .ok();
         }
     }
 
