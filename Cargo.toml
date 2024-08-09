@@ -45,9 +45,6 @@ spl-associated-token-account = { version = "^2.3", features = [
 ] }
 tokio = "1.35.1"
 url = "2.5"
-log = "0.4" # Required for logging macros
-log4rs = "1.2" # Add log4rs for logging configuration
-env_logger = "0.11" # For logging initialization
 
 # [patch.crates-io]
 # drillx = { path = "../drillx/drillx" }
