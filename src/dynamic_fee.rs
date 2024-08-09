@@ -2,16 +2,19 @@ use crate::Miner;
 use ore_api::consts::BUS_ADDRESSES;
 use reqwest::Client;
 use serde_json::{json, Value};
+use solana_client::rpc_response::RpcPrioritizationFee;
 use url::Url;
 
 // Define the FeeStrategy enum
 enum FeeStrategy {
     Helius,
     Triton,
+    Alchemy,
+    Quicknode,
 }
 
 impl Miner {
-    pub async fn dynamic_fee(&self) -> Option<u64> {
+    pub async fn dynamic_fee(&self) -> Result<u64, String> {
         let rpc_url = self
             .dynamic_fee_url
             .clone()
@@ -27,8 +30,12 @@ impl Miner {
             FeeStrategy::Helius
         } else if host.contains("rpcpool.com") {
             FeeStrategy::Triton
+        } else if host.contains("alchemy.com") {
+            FeeStrategy::Alchemy
+        } else if host.contains("quiknode.pro") {
+            FeeStrategy::Quiknode    
         } else {
-            return None;
+            return Err("Dynamic fees not supported by this RPC.".to_string());
         };
 
         let client = Client::new();
@@ -63,6 +70,27 @@ impl Miner {
                     ]
                 })
             }
+            FeeStrategy::Alchemy => {
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": "priority-fee-estimate",
+                    "method": "getRecentPrioritizationFees",
+                    "params": [
+                        ore_addresses
+                    ]
+                })
+            }
+            FeeStrategy::Quicknode => {
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": "1",
+                    "method": "qn_estimatePriorityFees",
+                    "params": {
+                        "account": BUS_ADDRESSES[0].to_string(),
+                        "last_n_blocks": 100
+                    }
+                })
+            }
         };
 
         let response: Value = client
@@ -75,18 +103,42 @@ impl Miner {
             .await
             .unwrap();
 
+        // Parse response
         let calculated_fee = match strategy {
             FeeStrategy::Helius => response["result"]["priorityFeeEstimate"]
                 .as_f64()
                 .map(|fee| fee as u64)
-                .ok_or_else(|| format!("Failed to parse priority fee. Response: {:?}", response))
-                .unwrap(),
-            FeeStrategy::Triton => response["result"]
+                .ok_or_else(|| format!("Failed to parse priority fee response: {:?}", response)),
+            FeeStrategy::Quicknode => response["result"]["per_compute_unit"]["medium"]
+                .as_f64()
+                .map(|fee| fee as u64)
+                .ok_or_else(|| format!("Please enable the Solana Priority Fee API add-on in your QuickNode account.")),
+            FeeStrategy::Alchemy => response["result"]
                 .as_array()
-                .and_then(|arr| arr.last())
-                .and_then(|last| last["prioritizationFee"].as_u64())
-                .ok_or_else(|| format!("Failed to parse priority fee. Response: {:?}", response))
-                .unwrap(),
+                .and_then(|arr| {
+                    Some(
+                        arr.into_iter()
+                            .map(|v| v["prioritizationFee"].as_u64().unwrap())
+                            .collect::<Vec<u64>>(),
+                    )
+                })
+                .and_then(|fees| {
+                    Some(
+                        ((fees.iter().sum::<u64>() as f32 / fees.len() as f32).ceil() * 1.2) as u64,
+                    )
+                })
+                .ok_or_else(|| format!("Failed to parse priority fee response: {:?}", response)),
+            FeeStrategy::Triton => {
+                serde_json::from_value::<Vec<RpcPrioritizationFee>>(response["result"].clone())
+                    .map(|prioritization_fees| {
+                        estimate_prioritization_fee_micro_lamports(prioritization_fees)
+                    })
+                    .or_else(|error: serde_json::Error| {
+                        Err(format!(
+                            "Failed to parse priority fee response: {response:?}, error: {error}"
+                        ))
+                    })
+            }
         };
 
         if let Some(max_fee) = self.dynamic_fee_max {
@@ -95,4 +147,28 @@ impl Miner {
             Some(calculated_fee)
         }
     }
+}
+
+/// Our estimate is the average over the last 20 slots
+pub fn estimate_prioritization_fee_micro_lamports(
+    prioritization_fees: Vec<RpcPrioritizationFee>,
+) -> u64 {
+    let prioritization_fees = prioritization_fees
+        .into_iter()
+        .rev()
+        .take(20)
+        .map(
+            |RpcPrioritizationFee {
+                 prioritization_fee, ..
+             }| prioritization_fee,
+        )
+        .collect::<Vec<_>>();
+    if prioritization_fees.is_empty() {
+        panic!("Response does not contain any prioritization fees");
+    }
+
+    let prioritization_fee =
+        prioritization_fees.iter().sum::<u64>() / prioritization_fees.len() as u64;
+
+    prioritization_fee
 }

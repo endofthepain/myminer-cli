@@ -1,5 +1,6 @@
 use std::time::Duration;
 use tokio::time::sleep;
+use chrono::Local;
 
 use colored::*;
 use solana_client::{
@@ -24,12 +25,12 @@ use crate::Miner;
 const MIN_SOL_BALANCE: f64 = 0.00005;
 
 const RPC_RETRIES: usize = 0;
-const _SIMULATION_RETRIES: usize = 4;
+const SIMULATION_RETRIES: usize = 4;
 const GATEWAY_RETRIES: usize = 150;
 const CONFIRM_RETRIES: usize = 8;
 
 const CONFIRM_DELAY: u64 = 500;
-const GATEWAY_DELAY: u64 = 0; //300;
+const GATEWAY_DELAY: u64 = 300;
 
 pub enum ComputeBudget {
     Dynamic,
@@ -69,7 +70,7 @@ impl Miner {
         };
 
         final_ixs.push(ComputeBudgetInstruction::set_compute_unit_price(
-            dynamic_fee.unwrap_or(0)
+            dynamic_fee.unwrap_or(0),
         ));
 
         // Add in user instructions
@@ -89,7 +90,10 @@ impl Miner {
         let progress_bar = spinner::new_progress_bar();
         let mut attempts = 0;
         loop {
-            progress_bar.set_message(format!("Submitting transaction... (attempt {})", attempts));
+            progress_bar.set_message(format!(
+                "Submitting transaction... (attempt {})",
+                attempts
+            ));
 
             // Sign tx with a new blockhash (after approximately ~45 sec)
             if attempts % 10 == 0 {
@@ -98,9 +102,15 @@ impl Miner {
                     let dynamic_fee = self.dynamic_fee().await;
                     match dynamic_fee {
                         Some(dynamic_fee) => {
-                            progress_bar.println(format!("  Priority fee: {} microlamports", dynamic_fee));
+                            progress_bar.println(format!(
+                                "  Priority fee: {} microlamports",
+                                dynamic_fee
+                            ));
                             final_ixs.remove(1);
-                            final_ixs.insert(1, ComputeBudgetInstruction::set_compute_unit_price(dynamic_fee));
+                            final_ixs.insert(
+                                1,
+                                ComputeBudgetInstruction::set_compute_unit_price(dynamic_fee),
+                            );
                         }
                         None => {
                             let fallback_fee = self.priority_fee.unwrap_or(0);
@@ -110,7 +120,11 @@ impl Miner {
                                 fallback_fee
                             ));
                             final_ixs.remove(1);
-                            final_ixs.insert(1, ComputeBudgetInstruction::set_compute_unit_price(fallback_fee));
+                            final_ixs.insert(
+                                1,
+                                ComputeBudgetInstruction::set_compute_unit_price(fallback_fee),
+                                tx = Transaction::new_with_payer(&final_ixs, Some(&fee_payer.pubkey()));
+                            );
                         }
                     }
                 }
@@ -160,6 +174,13 @@ impl Miner {
                                                 TransactionConfirmationStatus::Processed => {}
                                                 TransactionConfirmationStatus::Confirmed
                                                 | TransactionConfirmationStatus::Finalized => {
+                                                    let now = Local::now();
+                                                    let formatted_time =
+                                                        now.format("%Y-%m-%d %H:%M:%S").to_string();
+                                                    progress_bar.println(format!(
+                                                        "  Timestamp: {}",
+                                                        formatted_time
+                                                    ));
                                                     progress_bar.finish_with_message(format!(
                                                         "{} {}",
                                                         "OK".bold().green(),
@@ -199,7 +220,10 @@ impl Miner {
             sleep(Duration::from_millis(GATEWAY_DELAY)).await;
             attempts += 1;
             if attempts > GATEWAY_RETRIES {
-                progress_bar.finish_with_message(format!("{}: Max retries", "ERROR".bold().red()));
+                progress_bar.finish_with_message(format!(
+                    "{}: Max retries",
+                    "ERROR".bold().red()
+                ));
                 return Err(ClientError {
                     request: None,
                     kind: ClientErrorKind::Custom("Max retries".into()),
@@ -227,7 +251,6 @@ impl Miner {
 
     // TODO
     fn _simulate(&self) {
-
         // Simulate tx
         // let mut sim_attempts = 0;
         // 'simulate: loop {

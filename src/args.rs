@@ -3,7 +3,6 @@ use clap::{arg, Parser};
 #[derive(Parser, Debug)]
 pub struct BalanceArgs {
     #[arg(
-        long,
         value_name = "ADDRESS",
         help = "The address of the account to fetch the balance of"
     )]
@@ -28,7 +27,6 @@ pub struct BussesArgs {}
 #[derive(Parser, Debug)]
 pub struct ClaimArgs {
     #[arg(
-        long,
         value_name = "AMOUNT",
         help = "The amount of rewards to claim. Defaults to max."
     )]
@@ -54,11 +52,7 @@ pub struct InitializeArgs {}
 
 #[derive(Parser, Debug)]
 pub struct ProofArgs {
-    #[arg(
-        index = 0,
-        value_name = "ADDRESS",
-        help = "The address of the proof to fetch"
-    )]
+    #[arg(value_name = "ADDRESS", help = "The address of the proof to fetch")]
     pub address: Option<String>,
 }
 
@@ -113,11 +107,23 @@ pub struct StakeArgs {
 }
 
 #[derive(Parser, Debug)]
+pub struct TransferArgs {
+    #[arg(value_name = "AMOUNT", help = "The amount of ORE to transfer.")]
+    pub amount: f64,
+
+    #[arg(
+        value_name = "WALLET_ADDRESS",
+        help = "The wallet address of the receipient."
+    )]
+    pub to: String,
+}
+
+#[derive(Parser, Debug)]
 pub struct UpgradeArgs {
     #[arg(
         long,
         value_name = "AMOUNT",
-        help = "The amount of Ore to upgrade from v1 to v2. Defaults to max."
+        help = "The amount of ORE to upgrade from v1 to v2. Defaults to max."
     )]
     pub amount: Option<f64>,
 }

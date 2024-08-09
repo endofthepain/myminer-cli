@@ -69,7 +69,7 @@ impl Miner {
             };
 
             // Calculate the total compute budget, including the priority fee
-            let compute_budget = 480_000 + priority_fee;
+            let compute_budget = 500_000 + priority_fee;
             let mut ixs = vec![ore_api::instruction::auth(proof_pubkey(signer.pubkey()))];
             if self.should_reset(config).await && rand::thread_rng().gen_range(0..100) == 0 {
                 ixs.push(ore_api::instruction::reset(signer.pubkey()));
@@ -184,7 +184,7 @@ impl Miner {
                                 if timer.elapsed().as_secs() >= cutoff_time {
                                     if i.id == 0 {
                                         progress_bar.set_message(format!(
-                                            "Mining... ({} / {} difficulty)",
+                                            "Mining... (difficulty {})",
                                             global_best_difficulty,
                                             min_difficulty,
                                         ));
@@ -194,10 +194,13 @@ impl Miner {
                                     }
                                 } else if i.id == 0 {
                                     progress_bar.set_message(format!(
-                                        "Mining... ({} / {} difficulty, {} sec remaining)",
+                                        "Mining... (difficulty {}, time {})",
                                         global_best_difficulty,
                                         min_difficulty,
-                                        cutoff_time.saturating_sub(timer.elapsed().as_secs()),
+                                        format_duration(
+                                            cutoff_time.saturating_sub(timer.elapsed().as_secs())
+                                                as u32
+                                        ),
                                     ));
                                 }
                             }
@@ -225,7 +228,7 @@ impl Miner {
         }
 
         progress_bar.finish_with_message(format!(
-            "Best hash: {} (difficulty: {})",
+            "Best hash: {} (difficulty {})",
             bs58::encode(best_hash.h).into_string(),
             best_difficulty
         ));
@@ -238,7 +241,7 @@ impl Miner {
         if cores > num_cores {
             println!(
                 "{} Number of threads ({}) exceeds available cores ({})",
-                "WARNING".bold().yellow(),
+                "WARNING".bold().red(),
                 cores,
                 num_cores
             );
@@ -290,4 +293,11 @@ impl Miner {
     fn calculate_multiplier(balance: u64, top_balance: u64) -> f64 {
         1.0 + (balance as f64 / top_balance as f64).min(1.0f64)
     }
+
+    fn format_duration(seconds: u32) -> String {
+        let minutes = seconds / 60;
+        let remaining_seconds = seconds % 60;
+        format!("{:02}:{:02}", minutes, remaining_seconds)
+    }
+    
 }
