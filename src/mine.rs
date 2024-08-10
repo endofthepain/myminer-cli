@@ -8,7 +8,7 @@ use std::{
 use colored::*;
 use drillx::{self, equix, Hash, Solution};
 use ore_api::{
-    consts::EPOCH_DURATION,
+    consts::{BUS_ADDRESSES, BUS_COUNT, EPOCH_DURATION}, // Import constants
     state::{Bus, Config, Proof},
 };
 use ore_utils::AccountDeserialize;
@@ -93,7 +93,7 @@ impl Miner {
                     return;
                 }
             };
-                        
+
             // Print mining status
             println!(
                 "\n{}: {:.9} SOL\n{}: {}\n{}: {}",
@@ -125,10 +125,10 @@ impl Miner {
     async fn calculate_dynamic_fee(&self) -> u64 {
         let response = reqwest::get(self.dynamic_fee_url.as_ref().unwrap())
             .await
-            .unwrap_or_else(|_| panic!("Failed to fetch dynamic fee"))
+            .unwrap()
             .text()
             .await
-            .unwrap_or_else(|_| panic!("Failed to read dynamic fee response"));
+            .unwrap();
 
         response.parse::<u64>().unwrap_or(0)
     }
@@ -197,9 +197,9 @@ impl Miner {
                                 progress_bar.set_message(format!(
                                     "Mining... (difficulty {}, time {}, {:.2} H/s)",
                                     global_best_difficulty,
-                                    format_duration(
-                                        cutoff_time
-                                            .saturating_sub(timer.elapsed().as_secs())
+                                    Self::format_duration(
+                                        (cutoff_time
+                                            .saturating_sub(timer.elapsed().as_secs()))
                                             as u32
                                     ),
                                     hash_rate,
@@ -212,8 +212,8 @@ impl Miner {
                             progress_bar.set_message(format!(
                                 "Mining... (difficulty {}, time {}, {:.2} H/s)",
                                 global_best_difficulty,
-                                format_duration(
-                                    cutoff_time.saturating_sub(timer.elapsed().as_secs())
+                                Self::format_duration(
+                                    (cutoff_time.saturating_sub(timer.elapsed().as_secs()))
                                         as u32
                                 ),
                                 hash_rate,
@@ -242,7 +242,7 @@ impl Miner {
             }
         }
 
-        (Solution { nonce: best_nonce, hash: best_hash }, global_total_hashes.load(Ordering::Relaxed))
+        (Solution { n: best_nonce, d: best_difficulty }, global_total_hashes.load(Ordering::Relaxed))
     }
 
     fn check_num_cores(&self, cores: u64) {
@@ -253,37 +253,35 @@ impl Miner {
     }
 
     async fn should_reset(&self, config: Config) -> bool {
-        let epoch_time = get_epoch_time(&self.rpc_client).await;
+        let epoch_time = get_clock(&self.rpc_client).await as u64;
         let epoch_duration = EPOCH_DURATION as u64;
         let current_epoch = epoch_time / epoch_duration;
-        let last_reset = config.last_reset_epoch * epoch_duration;
+        let last_reset = config.last_reset_at * epoch_duration;
         let last_reset_epoch = last_reset / epoch_duration;
 
-        let reset_period = config.reset_period;
+        let reset_period = 10; // Replace with actual reset period value
         let should_reset = current_epoch - last_reset_epoch >= reset_period;
         should_reset
     }
 
     async fn get_cutoff(&self, proof: Proof, buffer_time: u64) -> u64 {
-        let clock = get_clock(&self.rpc_client).await;
+        let clock = get_clock(&self.rpc_client).await as u64;
         let epoch_duration = EPOCH_DURATION as u64;
         let current_epoch = clock / epoch_duration;
-        let proof_epoch = proof.last_hash_at / epoch_duration;
+        let proof_epoch = proof.last_hash_at as u64 / epoch_duration;
         let epoch_diff = current_epoch - proof_epoch;
 
-        let cutoff_time = if epoch_diff > 0 {
-            proof.last_hash_at + (epoch_diff * epoch_duration) + buffer_time
-        } else {
-            proof.last_hash_at + buffer_time
-        };
-
+        let mut cutoff_time = proof.last_hash_at as u64 + (epoch_diff * epoch_duration) + buffer_time;
         cutoff_time
     }
 
-    async fn find_bus(&self) -> Pubkey {
-        const BUS_ADDRESSES: [Pubkey; BUS_COUNT] = [ /* Your bus addresses here */ ];
-        const BUS_COUNT: usize = /* Your bus count here */;
+    fn format_duration(seconds: u32) -> String {
+        let minutes = seconds / 60;
+        let remaining_seconds = seconds % 60;
+        format!("{:02}:{:02}", minutes, remaining_seconds)
+    }
 
+    async fn find_bus(&self) -> Pubkey {
         // Fetch the bus with the largest balance
         if let Ok(accounts) = self.rpc_client.get_multiple_accounts(&BUS_ADDRESSES).await {
             let mut top_bus_balance: u64 = 0;
@@ -308,11 +306,5 @@ impl Miner {
 
     fn calculate_multiplier(balance: u64, top_balance: u64) -> f64 {
         1.0 + (balance as f64 / top_balance as f64).min(1.0f64)
-    }
-
-    fn format_duration(seconds: u32) -> String {
-        let minutes = seconds / 60;
-        let remaining_seconds = seconds % 60;
-        format!("{:02}:{:02}", minutes, remaining_seconds)
     }
 }
