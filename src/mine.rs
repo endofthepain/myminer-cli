@@ -145,22 +145,22 @@ impl Miner {
         let global_best_difficulty = Arc::new(AtomicU32::new(0));
         let global_total_hashes = Arc::new(AtomicU64::new(0));
         progress_bar.set_message("Mining...");
-
+    
         let start_time = Instant::now();
-
+    
         for i in 0..cores {
             let tx = tx.clone();
             let global_best_difficulty = Arc::clone(&global_best_difficulty);
             let global_total_hashes = Arc::clone(&global_total_hashes);
             let proof = proof.clone();
             let progress_bar = progress_bar.clone();
-
+    
             thread::spawn(move || {
                 let mut memory = equix::SolverMemory::new();
                 let timer = Instant::now();
                 let mut nonce = u64::MAX.saturating_div(cores).saturating_mul(i);
                 let mut best_nonce = nonce;
-                let mut best_difficulty = 0;
+                let mut best_difficulty: u64 = 0; // Ensure this matches the expected type
                 let mut best_hash = Hash::default();
                 loop {
                     if let Ok(hx) = drillx::hash_with_memory(
@@ -171,24 +171,24 @@ impl Miner {
                         let difficulty = hx.difficulty();
                         if difficulty > best_difficulty {
                             best_nonce = nonce; // Update the best_nonce here
-                            best_difficulty = difficulty;
+                            best_difficulty = difficulty as u64; // Ensure this matches the expected type
                             best_hash = hx;
-
-                            let prev_best_difficulty = global_best_difficulty.fetch_max(best_difficulty, Ordering::Relaxed);
-                            if best_difficulty > prev_best_difficulty {
+    
+                            let prev_best_difficulty = global_best_difficulty.fetch_max(difficulty as u32, Ordering::Relaxed);
+                            if difficulty > prev_best_difficulty as u64 {
                                 cutoff_time += 10;
                             }
                         }
                     }
-
+    
                     global_total_hashes.fetch_add(1, Ordering::Relaxed);
-
+    
                     if nonce % 100 == 0 {
                         let global_best_difficulty = global_best_difficulty.load(Ordering::Relaxed);
                         let total_hashes = global_total_hashes.load(Ordering::Relaxed);
                         let elapsed_time = start_time.elapsed().as_secs_f64();
                         let hash_rate = total_hashes as f64 / elapsed_time;
-
+    
                         if timer.elapsed().as_secs() >= cutoff_time {
                             if i == 0 {
                                 progress_bar.set_message(format!(
@@ -201,7 +201,7 @@ impl Miner {
                                     hash_rate,
                                 ));
                             }
-                            if global_best_difficulty >= min_difficulty {
+                            if global_best_difficulty >= min_difficulty as u32 {
                                 break;
                             }
                         } else if i == 0 {
@@ -215,18 +215,18 @@ impl Miner {
                             ));
                         }
                     }
-
+    
                     nonce += cores;
                 }
-
+    
                 // Send the result back to the main thread
                 tx.send((best_nonce.to_le_bytes(), best_difficulty, best_hash)).unwrap();
             });
         }
-
+    
         // Collect results from threads
         let mut best_nonce = [0; 16]; // Adjust according to Solution definition
-        let mut best_difficulty = 0;
+        let mut best_difficulty: u64 = 0; // Ensure this matches the expected type
         let mut best_hash = Hash::default();
         for _ in 0..cores {
             let (nonce_bytes, difficulty, hash) = rx.recv().unwrap();
@@ -236,7 +236,7 @@ impl Miner {
                 best_hash = hash;
             }
         }
-
+    
         (Solution { n: best_nonce, d: best_difficulty }, global_total_hashes.load(Ordering::Relaxed))
     }
 
