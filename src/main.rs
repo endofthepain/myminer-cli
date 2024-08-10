@@ -19,7 +19,10 @@ mod transfer;
 mod upgrade;
 mod utils;
 
-use std::sync::Arc;
+use std::{sync::Arc, sync::RwLock};
+use futures::StreamExt;
+use tokio_tungstenite::connect_async;
+use tokio_tungstenite::tungstenite::protocol::Message;
 
 use args::*;
 use clap::{command, Parser, Subcommand};
@@ -28,6 +31,7 @@ use solana_sdk::{
     commitment_config::CommitmentConfig,
     signature::{read_keypair_file, Keypair},
 };
+use utils::Tip;
 
 struct Miner {
     pub keypair_filepath: Option<String>,
@@ -37,6 +41,8 @@ struct Miner {
     pub dynamic_fee_max: Option<u64>,
     pub rpc_client: Arc<RpcClient>,
     pub fee_payer_filepath: Option<String>,
+    pub jito_client: Arc<RpcClient>,
+    pub tip: Arc<std::sync::RwLock<u64>>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -140,6 +146,14 @@ struct Args {
 
     #[arg(
         long,
+        value_name = "JITO", 
+        help = "Add jito tip to the miner. Defaults to false.",
+        global = true
+    )]
+    jito: bool,
+
+    #[arg(
+        long,
         value_name = "DYNAMIC_FEE_MAX",
         help = "Maximum priority fee to use for dynamic fee estimation.",
         default_value = "500000",
@@ -172,6 +186,31 @@ async fn main() {
     let default_keypair = args.keypair.unwrap_or(cli_config.keypair_path.clone());
     let fee_payer_filepath = args.fee_payer.unwrap_or(default_keypair.clone());
     let rpc_client = RpcClient::new_with_commitment(cluster, CommitmentConfig::confirmed());
+    let jito_client =
+        RpcClient::new("https://mainnet.block-engine.jito.wtf/api/v1/transactions".to_string());
+
+    let tip = Arc::new(RwLock::new(0_u64));
+    let tip_clone = Arc::clone(&tip);
+
+    if args.jito {
+        let url = "ws://bundles-api-rest.jito.wtf/api/v1/bundles/tip_stream";
+        let (ws_stream, _) = connect_async(url).await.unwrap();
+        let (_, mut read) = ws_stream.split();
+
+        tokio::spawn(async move {
+            while let Some(message) = read.next().await {
+                if let Ok(Message::Text(text)) = message {
+                    if let Ok(tips) = serde_json::from_str::<Vec<Tip>>(&text) {
+                        for item in tips {
+                            let mut tip = tip_clone.write().unwrap();
+                            *tip =
+                                (item.landed_tips_50th_percentile * (10_f64).powf(9.0)) as u64;
+                        }
+                    }
+                }
+            }
+        });
+    }
 
     let miner = Arc::new(Miner::new(
         Arc::new(rpc_client),
@@ -181,6 +220,8 @@ async fn main() {
         args.dynamic_fee,
         args.dynamic_fee_max,
         Some(fee_payer_filepath),
+        Arc::new(jito_client),
+        tip,
     ));
 
     // Execute user command.
@@ -237,6 +278,8 @@ impl Miner {
         dynamic_fee: bool,
         dynamic_fee_max: Option<u64>,
         fee_payer_filepath: Option<String>,
+        jito_client: Arc<RpcClient>,
+        tip: Arc<std::sync::RwLock<u64>>,
     ) -> Self {
         Self {
             rpc_client,
@@ -246,6 +289,8 @@ impl Miner {
             dynamic_fee,
             dynamic_fee_max,
             fee_payer_filepath,
+            jito_client,
+            tip,
         }
     }
 
