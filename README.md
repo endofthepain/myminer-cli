@@ -1,6 +1,6 @@
-# ORE CLI
+# MYORE CLI
 
-A Modification From Official [ore-cli](https://github.com/regolith-labs/ore-cli).
+A Modification ORE CLI From Official [ore-cli](https://github.com/regolith-labs/ore-cli).
 
 ## Install
 
@@ -9,7 +9,6 @@ To install the CLI, use [cargo](https://doc.rust-lang.org/cargo/getting-started/
 ```sh
 cargo install myore-cli
 ```
-
 
 ### Dependencies
 If you run into issues during installation, please install the following dependencies for your operating system and try again:
