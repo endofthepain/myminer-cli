@@ -116,7 +116,7 @@ impl Miner {
         }
     }
 
-    async fn fetch_sol_balance(&self) -> Result<u64, solana_client::client_error::ClientError> {
+    pub async fn fetch_sol_balance(&self) -> Result<u64, solana_client::client_error::ClientError> {
         let pubkey = self.signer().pubkey();
         let balance = self.rpc_client.get_balance(&pubkey).await?;
         Ok(balance)
@@ -139,21 +139,22 @@ impl Miner {
         cores: u64,
         min_difficulty: u32,
     ) -> (Solution, u64) {
+        // Create a thread pool and use a channel for load balancing
         let (tx, rx) = channel();
         let progress_bar = Arc::new(spinner::new_progress_bar());
         let global_best_difficulty = Arc::new(AtomicU32::new(0));
         let global_total_hashes = Arc::new(AtomicU64::new(0));
         progress_bar.set_message("Mining...");
-    
+
         let start_time = Instant::now();
-    
+
         for i in 0..cores {
             let tx = tx.clone();
             let global_best_difficulty = Arc::clone(&global_best_difficulty);
             let global_total_hashes = Arc::clone(&global_total_hashes);
             let proof = proof.clone();
             let progress_bar = progress_bar.clone();
-    
+
             thread::spawn(move || {
                 let mut memory = equix::SolverMemory::new();
                 let timer = Instant::now();
@@ -172,22 +173,22 @@ impl Miner {
                             best_nonce = nonce;
                             best_difficulty = difficulty;
                             best_hash = hx;
-    
+
                             let prev_best_difficulty = global_best_difficulty.fetch_max(best_difficulty, Ordering::Relaxed);
                             if best_difficulty > prev_best_difficulty {
                                 cutoff_time += 10;
                             }
                         }
                     }
-    
+
                     global_total_hashes.fetch_add(1, Ordering::Relaxed);
-    
+
                     if nonce % 100 == 0 {
                         let global_best_difficulty = global_best_difficulty.load(Ordering::Relaxed);
                         let total_hashes = global_total_hashes.load(Ordering::Relaxed);
                         let elapsed_time = start_time.elapsed().as_secs_f64();
                         let hash_rate = total_hashes as f64 / elapsed_time;
-    
+
                         if timer.elapsed().as_secs() >= cutoff_time {
                             if i == 0 {
                                 progress_bar.set_message(format!(
@@ -214,14 +215,16 @@ impl Miner {
                             ));
                         }
                     }
-    
+
                     nonce += cores;
                 }
-    
+
+                // Send the result back to the main thread
                 tx.send((best_nonce.to_le_bytes(), best_difficulty, best_hash)).unwrap();
             });
         }
-    
+
+        // Collect results from threads
         let mut best_nonce = [0; 8]; // Adjust according to Solution definition
         let mut best_difficulty = 0;
         let mut best_hash = Hash::default();
@@ -233,11 +236,11 @@ impl Miner {
                 best_hash = hash;
             }
         }
-    
+
         (Solution { n: best_nonce, d: best_difficulty }, global_total_hashes.load(Ordering::Relaxed))
     }
 
-    fn check_num_cores(&self, cores: u64) {
+    pub fn check_num_cores(&self, cores: u64) {
         let num_cores = num_cpus::get() as u64;
         if cores > num_cores {
             panic!("Number of cores specified exceeds available cores.");
@@ -245,32 +248,30 @@ impl Miner {
     }
 
     async fn should_reset(&self, config: Config) -> bool {
-        let epoch_time = get_clock(&self.rpc_client).await as u64;
+        let epoch_time = get_clock(&self.rpc_client).await as u64; // Ensure proper conversion
         let epoch_duration = EPOCH_DURATION as u64;
         let current_epoch = epoch_time / epoch_duration;
-        let last_reset = config.last_reset_at as u64 * epoch_duration;
+        let last_reset = config.last_reset_at * epoch_duration;
         let last_reset_epoch = last_reset / epoch_duration;
 
         let reset_period = 10; // Replace with actual reset period value
-        let should_reset = current_epoch - last_reset_epoch >= reset_period;
-        should_reset
+        current_epoch - last_reset_epoch >= reset_period
     }
 
     async fn get_cutoff(&self, proof: Proof, buffer_time: u64) -> u64 {
-        let clock = get_clock(&self.rpc_client).await as u64;
+        let clock = get_clock(&self.rpc_client).await as u64; // Ensure proper conversion
         let epoch_duration = EPOCH_DURATION as u64;
         let current_epoch = clock / epoch_duration;
-        let proof_epoch = proof.last_hash_at as u64 / epoch_duration;
+        let proof_epoch = proof.last_hash_at / epoch_duration;
         let epoch_diff = current_epoch - proof_epoch;
 
-        let mut cutoff_time = proof.last_hash_at as u64 + (epoch_diff * epoch_duration) + buffer_time;
-        cutoff_time
+        proof.last_hash_at + (epoch_diff * epoch_duration) + buffer_time
     }
 
     fn format_duration(seconds: u32) -> String {
         let minutes = seconds / 60;
-        let remaining_seconds = seconds % 60;
-        format!("{:02}:{:02}", minutes, remaining_seconds)
+        let seconds = seconds % 60;
+        format!("{}m {}s", minutes, seconds)
     }
 
     async fn find_bus(&self) -> Pubkey {
@@ -297,6 +298,6 @@ impl Miner {
     }
 
     fn calculate_multiplier(balance: u64, top_balance: u64) -> f64 {
-        1.0 + (balance as f64 / top_balance as f64).min(1.0)
+        1.0 + (balance as f64 / top_balance as f64).min(1.0f64)
     }
 }
