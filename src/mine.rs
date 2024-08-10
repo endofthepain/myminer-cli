@@ -37,15 +37,6 @@ impl Miner {
         let mut last_hash_at = 0;
         let mut last_balance = 0;
 
-        // Fetch SOL balance
-        let sol_balance = match self.fetch_sol_balance().await {
-            Ok(balance) => balance,
-            Err(_) => {
-                println!("Failed to fetch SOL balance.");
-                return;
-            }
-        };
-
         // Start mining loop
         loop {
             // Fetch proof
@@ -97,6 +88,15 @@ impl Miner {
             )
             .await;
 
+            // Fetch SOL balance
+            let sol_balance = match self.fetch_sol_balance().await {
+                Ok(balance) => balance,
+                Err(_) => {
+                    println!("Failed to fetch SOL balance.");
+                    return;
+                }
+            };
+                        
             // Print mining status
             println!(
                 "\n{}: {:.9} SOL\n{}: {}\n{}: {}",

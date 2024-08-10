@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{str::FromStr, time::Duration};
 use tokio::time::sleep;
 use chrono::Local;
 use rand::seq::SliceRandom;
@@ -9,7 +9,10 @@ use solana_client::{
 };
 use solana_program::{
     instruction::Instruction,
-    native_token::{lamports_to_sol, sol_to_lamports}, system_instruction::transfer, pubkey::Pubkey,};
+    native_token::{lamports_to_sol, sol_to_lamports},
+    system_instruction::transfer,
+    pubkey::Pubkey,
+};
 use solana_rpc_client::spinner;
 use solana_sdk::{
     commitment_config::CommitmentLevel,
@@ -22,11 +25,9 @@ use solana_transaction_status::{TransactionConfirmationStatus, UiTransactionEnco
 use crate::Miner;
 
 const MIN_SOL_BALANCE: f64 = 0.00005;
-
 const RPC_RETRIES: usize = 0;
 const GATEWAY_RETRIES: usize = 150;
 const CONFIRM_RETRIES: usize = 8;
-
 const CONFIRM_DELAY: u64 = 500;
 const GATEWAY_DELAY: u64 = 300;
 
@@ -50,7 +51,13 @@ impl Miner {
                 kind: ClientErrorKind::Custom(err.to_string()),
             });
         }
-    
+
+        // Retrieve current tip from the Miner struct
+        let current_tip = *self.tip.read().unwrap();
+
+        // Retrieve signer
+        let signer = self.signer();
+        
         // Set compute budget
         let mut final_ixs = vec![];
         match compute_budget {
@@ -61,7 +68,7 @@ impl Miner {
                 final_ixs.push(ComputeBudgetInstruction::set_compute_unit_limit(cus))
             }
         }
-    
+
         // Set compute unit price
         let dynamic_fee = match self.dynamic_fee {
             true => match self.dynamic_fee().await {
@@ -76,11 +83,11 @@ impl Miner {
             },
             false => Some(self.priority_fee.unwrap_or(0)),
         };
-    
+
         final_ixs.push(ComputeBudgetInstruction::set_compute_unit_price(
             dynamic_fee.unwrap_or(0),
         ));
-    
+
         // Add in user instructions
         final_ixs.extend_from_slice(ixs);
 
@@ -106,7 +113,7 @@ impl Miner {
                 )
             );
         }
-        
+
         // Build tx
         let send_cfg = RpcSendTransactionConfig {
             skip_preflight: true,
@@ -116,17 +123,15 @@ impl Miner {
             min_context_slot: None,
         };
         let fee_payer = self.fee_payer();
-        let signer = self.signer();
         let mut tx = Transaction::new_with_payer(&final_ixs, Some(&fee_payer.pubkey()));
-        let mut send_client = self.rpc_client.clone();
 
-
-        let current_tip = *self.tip.read().unwrap();
-
-        if current_tip > 0 {
-            send_client = self.jito_client.clone();
-        }
-
+        // Use jito_client if current_tip > 0
+        let send_client = if current_tip > 0 {
+            self.jito_client.clone()
+        } else {
+            self.rpc_client.clone()
+        };
+        
         // Submit tx
         let progress_bar = spinner::new_progress_bar();
         let mut attempts = 0;
@@ -135,7 +140,7 @@ impl Miner {
                 "Submitting transaction... (attempt {})",
                 attempts
             ));
-    
+
             // Sign tx with a new blockhash (after approximately ~45 sec)
             if attempts % 10 == 0 {
                 // Reset the compute unit price
@@ -158,7 +163,7 @@ impl Miner {
                     );
                     tx = Transaction::new_with_payer(&final_ixs, Some(&fee_payer.pubkey()));
                 }
-    
+
                 // Resign the tx
                 let (hash, _slot) = match self.rpc_client
                     .get_latest_blockhash_with_commitment(self.rpc_client.commitment())
@@ -182,16 +187,16 @@ impl Miner {
                     tx.sign(&[&signer, &fee_payer], hash);
                 }
             }
-    
+
             // Send transaction
-            match self.rpc_client.send_transaction_with_config(&tx, send_cfg).await {
+            match send_client.send_transaction_with_config(&tx, send_cfg).await {
                 Ok(sig) => {
                     // Skip confirmation
                     if skip_confirm {
                         progress_bar.finish_with_message(format!("Sent: {}", sig));
                         return Ok(sig);
                     }
-    
+
                     // Confirm transaction
                     for _ in 0..CONFIRM_RETRIES {
                         sleep(Duration::from_millis(CONFIRM_DELAY)).await;
@@ -234,7 +239,7 @@ impl Miner {
                                     }
                                 }
                             }
-    
+
                             // Handle confirmation errors
                             Err(_err) => {
                                 progress_bar.set_message(format!(
@@ -246,7 +251,7 @@ impl Miner {
                         }
                     }
                 }
-    
+
                 // Handle submit errors
                 Err(_err) => {
                     progress_bar.set_message(format!(
@@ -256,7 +261,7 @@ impl Miner {
                     ));
                 }
             }
-    
+
             // Retry
             sleep(Duration::from_millis(GATEWAY_DELAY)).await;
             attempts += 1;
