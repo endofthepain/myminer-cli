@@ -170,7 +170,7 @@ impl Miner {
                     ) {
                         let difficulty = hx.difficulty();
                         if difficulty > best_difficulty {
-                            best_nonce = nonce;
+                            best_nonce = nonce; // Update the best_nonce here
                             best_difficulty = difficulty;
                             best_hash = hx;
 
