@@ -62,12 +62,9 @@ impl Miner {
             }
 
             let cutoff_time = self.get_cutoff(proof, args.buffer_time.try_into().unwrap()).await;
-            let (solution, hash_rate) = Self::find_hash_par(
-                proof,
-                cutoff_time,
-                args.cores,
-                config.min_difficulty as u32 // Ensure min_difficulty is used here
-            ).await;
+            let solution =
+                Self::find_hash_par(proof, cutoff_time, args.cores, config.min_difficulty as u32)
+                    .await;
 
             ixs.push(ore_api::instruction::mine(
                 signer.pubkey(),
@@ -303,11 +300,8 @@ impl Miner {
     }
 
     fn format_duration(seconds: u32) -> String {
-        format!(
-            "{:02}:{:02}:{:02}",
-            seconds / 3600,
-            (seconds % 3600) / 60,
-            seconds % 60
-        )
+        let minutes = seconds / 60;
+        let remaining_seconds = seconds % 60;
+        format!("{:02}:{:02}", minutes, remaining_seconds)
     }
 }
