@@ -21,7 +21,7 @@ use crate::{
     args::MineArgs,
     send_and_confirm::ComputeBudget,
     utils::{
-        amount_u64_to_string, get_clock, get_config, get_updated_proof_with_authority, proof_pubkey,
+        amount_u64_to_string, get_config, get_updated_proof_with_authority, proof_pubkey,
     },
     Miner,
 };
@@ -139,7 +139,6 @@ impl Miner {
         cores: u64,
         min_difficulty: u32,
     ) -> (Solution, u64) {
-        // Create a thread pool and use a channel for load balancing
         let (tx, rx) = channel();
         let progress_bar = Arc::new(spinner::new_progress_bar());
         let global_best_difficulty = Arc::new(AtomicU32::new(0));
@@ -159,8 +158,8 @@ impl Miner {
                 let mut memory = equix::SolverMemory::new();
                 let timer = Instant::now();
                 let mut nonce = u64::MAX.saturating_div(cores).saturating_mul(i);
-                let mut best_nonce = nonce;
-                let mut best_difficulty: u64 = 0; // Ensure this matches the expected type
+                let mut best_nonce = [0; 16];
+                let mut best_difficulty = 0;
                 let mut best_hash = Hash::default();
                 loop {
                     if let Ok(hx) = drillx::hash_with_memory(
@@ -169,13 +168,13 @@ impl Miner {
                         &nonce.to_le_bytes(),
                     ) {
                         let difficulty = hx.difficulty();
-                        if difficulty > best_difficulty {
-                            best_nonce = nonce; // Update the best_nonce here
-                            best_difficulty = difficulty as u64; // Ensure this matches the expected type
+                        if u64::from(difficulty) > best_difficulty {
+                            best_nonce.copy_from_slice(&nonce.to_le_bytes()[..16]);
+                            best_difficulty = u64::from(difficulty);
                             best_hash = hx;
     
-                            let prev_best_difficulty = global_best_difficulty.fetch_max(difficulty as u32, Ordering::Relaxed);
-                            if difficulty > prev_best_difficulty as u64 {
+                            let prev_best_difficulty = global_best_difficulty.fetch_max(difficulty, Ordering::Relaxed);
+                            if best_difficulty > u64::from(prev_best_difficulty) {
                                 cutoff_time += 10;
                             }
                         }
@@ -201,7 +200,7 @@ impl Miner {
                                     hash_rate,
                                 ));
                             }
-                            if global_best_difficulty >= min_difficulty as u32 {
+                            if global_best_difficulty >= min_difficulty {
                                 break;
                             }
                         } else if i == 0 {
@@ -219,27 +218,25 @@ impl Miner {
                     nonce += cores;
                 }
     
-                // Send the result back to the main thread
-                tx.send((best_nonce.to_le_bytes(), best_difficulty, best_hash)).unwrap();
+                tx.send((best_nonce, best_difficulty, best_hash)).unwrap();
             });
         }
     
-        // Collect results from threads
-        let mut best_nonce = [0; 16]; // Adjust according to Solution definition
-        let mut best_difficulty: u64 = 0; // Ensure this matches the expected type
+        let mut best_nonce = [0; 16];
+        let mut best_difficulty = 0;
         let mut best_hash = Hash::default();
         for _ in 0..cores {
-            let (nonce_bytes, difficulty, hash) = rx.recv().unwrap();
+            let (nonce, difficulty, hash) = rx.recv().unwrap();
             if difficulty > best_difficulty {
                 best_difficulty = difficulty;
-                best_nonce.copy_from_slice(&nonce_bytes[..16]); // Copy to fit the array
+                best_nonce.copy_from_slice(&nonce);
                 best_hash = hash;
             }
         }
     
         (Solution { n: best_nonce, d: best_difficulty }, global_total_hashes.load(Ordering::Relaxed))
     }
-
+    
     pub fn check_num_cores(&self, cores: u64) {
         let num_cores = num_cpus::get() as u64;
         if cores > num_cores {
