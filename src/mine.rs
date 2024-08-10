@@ -8,7 +8,7 @@ use std::{
 use colored::*;
 use drillx::{self, equix, Hash, Solution};
 use ore_api::{
-    consts::{BUS_ADDRESSES, BUS_COUNT, EPOCH_DURATION}, // Import constants
+    consts::{BUS_ADDRESSES, BUS_COUNT, EPOCH_DURATION},
     state::{Bus, Config, Proof},
 };
 use ore_utils::AccountDeserialize;
@@ -44,7 +44,6 @@ impl Miner {
 
             // Apply dynamic fee logic
             let priority_fee = if self.dynamic_fee {
-                // Calculate dynamic fee, ensuring it doesn't exceed dynamic_fee_max
                 let dynamic_fee = self.calculate_dynamic_fee().await;
                 if let Some(max_fee) = self.dynamic_fee_max {
                     dynamic_fee.min(max_fee)
@@ -158,7 +157,7 @@ impl Miner {
                 let mut memory = equix::SolverMemory::new();
                 let timer = Instant::now();
                 let mut nonce = u64::MAX.saturating_div(cores).saturating_mul(i);
-                let mut best_nonce = [0; 8]; // Adjust to match the expected size
+                let mut best_nonce = [0; 16]; // Adjusted to match the expected size
                 let mut best_difficulty = 0;
                 let mut best_hash = Hash::default();
                 loop {
@@ -169,7 +168,7 @@ impl Miner {
                     ) {
                         let difficulty = hx.difficulty();
                         if u32::from(difficulty) > best_difficulty {
-                            best_nonce.copy_from_slice(&nonce.to_le_bytes()[..8]); // Copy to fit the array size
+                            best_nonce.copy_from_slice(&nonce.to_le_bytes()); // Copy to fit the array size
                             best_difficulty = u32::from(difficulty);
                             best_hash = hx;
     
@@ -222,7 +221,7 @@ impl Miner {
             });
         }
     
-        let mut best_nonce = [0; 8]; // Ensure it matches the expected size
+        let mut best_nonce = [0; 16]; // Ensure it matches the expected size
         let mut best_difficulty = 0;
         let mut best_hash = Hash::default();
         for _ in 0..cores {
@@ -236,7 +235,6 @@ impl Miner {
     
         (Solution { n: best_nonce, d: best_difficulty }, global_total_hashes.load(Ordering::Relaxed))
     }
-    
     
     pub fn check_num_cores(&self, cores: u64) {
         let num_cores = num_cpus::get() as u64;
