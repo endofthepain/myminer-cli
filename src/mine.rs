@@ -196,7 +196,7 @@ impl Miner {
                                     global_best_difficulty,
                                     Self::format_duration(
                                         (cutoff_time
-                                            .saturating_sub(timer.elapsed().as_secs())) as u32
+                                            .saturating_sub(timer.elapsed().as_secs() as u64)) as u32
                                     ),
                                     hash_rate,
                                 ));
@@ -209,7 +209,7 @@ impl Miner {
                                 "Mining... (difficulty {}, time {}, {:.2} H/s)",
                                 global_best_difficulty,
                                 Self::format_duration(
-                                    (cutoff_time.saturating_sub(timer.elapsed().as_secs())) as u32
+                                    (cutoff_time.saturating_sub(timer.elapsed().as_secs() as u64)) as u32
                                 ),
                                 hash_rate,
                             ));
@@ -248,24 +248,23 @@ impl Miner {
     }
 
     async fn should_reset(&self, config: Config) -> bool {
-        let epoch_time = get_clock(&self.rpc_client).await as u64; // Ensure proper conversion
-        let epoch_duration = EPOCH_DURATION as u64;
-        let current_epoch = epoch_time / epoch_duration;
-        let last_reset = config.last_reset_at * epoch_duration;
-        let last_reset_epoch = last_reset / epoch_duration;
-
-        let reset_period = 10; // Replace with actual reset period value
-        current_epoch - last_reset_epoch >= reset_period
+        let now = Instant::now().duration_since(Instant::UNIX_EPOCH).as_secs() as i64;
+        let epoch_duration = EPOCH_DURATION as i64;
+        let last_reset_at = config.last_reset_at as i64;
+        let current_epoch = now / epoch_duration;
+        let last_reset_epoch = last_reset_at / epoch_duration;
+        let reset_period = 24; // Example reset period in hours
+        (current_epoch - last_reset_epoch) >= reset_period
     }
 
-    async fn get_cutoff(&self, proof: Proof, buffer_time: u64) -> u64 {
-        let clock = get_clock(&self.rpc_client).await as u64; // Ensure proper conversion
+    async fn get_cutoff(&self, proof: Proof, buffer_time: u32) -> u64 {
+        let clock = get_clock(&self.rpc_client).await; // Ensure proper conversion
         let epoch_duration = EPOCH_DURATION as u64;
         let current_epoch = clock / epoch_duration;
         let proof_epoch = proof.last_hash_at / epoch_duration;
-        let epoch_diff = current_epoch - proof_epoch;
+        let epoch_diff = (current_epoch as i64 - proof_epoch as i64) as u64;
 
-        proof.last_hash_at + (epoch_diff * epoch_duration) + buffer_time
+        proof.last_hash_at + (epoch_diff * epoch_duration) + buffer_time as u64
     }
 
     fn format_duration(seconds: u32) -> String {
@@ -298,6 +297,6 @@ impl Miner {
     }
 
     fn calculate_multiplier(balance: u64, top_balance: u64) -> f64 {
-        1.0 + (balance as f64 / top_balance as f64).min(1.0f64)
+        1.0 + (balance as f64 / top_balance as f64).min(1.0)
     }
 }
