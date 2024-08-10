@@ -44,14 +44,13 @@ impl Miner {
         compute_budget: ComputeBudget,
         skip_confirm: bool,
     ) -> ClientResult<Signature> {
-        let signer = self.signer();
-        let client = self.rpc_client.clone();
-        let fee_payer = self.fee_payer();
-    
-        // Return error, if balance is zero
+        // Check balance
         if let Err(err) = self.check_balance().await {
-            println!("Failed to check balance: {:?}", err);
-            return Err(err);
+            println!("{}", err);
+            return Err(ClientError {
+                request: None,
+                kind: ClientErrorKind::Custom(err),
+            });
         }
     
         // Set compute budget
