@@ -47,10 +47,13 @@ impl Miner {
         let signer = self.signer();
         let client = self.rpc_client.clone();
         let fee_payer = self.fee_payer();
-
+    
         // Return error, if balance is zero
-        self.check_balance().await;
-
+        if let Err(err) = self.check_balance().await {
+            println!("Failed to check balance: {:?}", err);
+            return Err(err);
+        }
+    
         // Set compute budget
         let mut final_ixs = vec![];
         match compute_budget {
@@ -61,27 +64,29 @@ impl Miner {
                 final_ixs.push(ComputeBudgetInstruction::set_compute_unit_limit(cus))
             }
         }
-
+    
         // Set compute unit price
-        let dynamic_fee = if self.dynamic_fee {
-            match self.dynamic_fee().await {
+        let dynamic_fee = match self.dynamic_fee {
+            true => match self.dynamic_fee().await {
                 Ok(fee) => Some(fee),
                 Err(err) => {
-                    eprintln!("Failed to fetch dynamic fee: {}", err);
-                    None
+                    println!("Failed to get dynamic fee: {:?}", err);
+                    return Err(ClientError {
+                        request: None,
+                        kind: ClientErrorKind::Custom(err),
+                    });
                 }
-            }
-        } else {
-            Some(self.priority_fee.unwrap_or(0))
+            },
+            false => Some(self.priority_fee.unwrap_or(0)),
         };
-
+    
         final_ixs.push(ComputeBudgetInstruction::set_compute_unit_price(
             dynamic_fee.unwrap_or(0),
         ));
-
+    
         // Add in user instructions
         final_ixs.extend_from_slice(ixs);
-
+    
         // Build tx
         let send_cfg = RpcSendTransactionConfig {
             skip_preflight: true,
@@ -91,7 +96,7 @@ impl Miner {
             min_context_slot: None,
         };
         let mut tx = Transaction::new_with_payer(&final_ixs, Some(&fee_payer.pubkey()));
-
+    
         // Submit tx
         let progress_bar = spinner::new_progress_bar();
         let mut attempts = 0;
@@ -100,52 +105,54 @@ impl Miner {
                 "Submitting transaction... (attempt {})",
                 attempts
             ));
-
+    
             // Sign tx with a new blockhash (after approximately ~45 sec)
             if attempts % 10 == 0 {
                 // Reset the compute unit price
                 if self.dynamic_fee {
-                    match self.dynamic_fee().await {
-                        Ok(dynamic_fee) => {
-                            progress_bar.println(format!(
-                                "  Priority fee: {} microlamports",
-                                dynamic_fee
-                            ));
-                            final_ixs.remove(1);
-                            final_ixs.insert(
-                                1,
-                                ComputeBudgetInstruction::set_compute_unit_price(dynamic_fee),
-                            );
-                        }
-                        Err(_err) => {
-                            let fallback_fee = self.priority_fee.unwrap_or(0);
+                    let dynamic_fee = match self.dynamic_fee().await {
+                        Ok(fee) => fee,
+                        Err(err) => {
                             progress_bar.println(format!(
                                 "{} Dynamic fees not supported by this RPC. Falling back to static value: {} microlamports",
                                 "WARNING".bold().yellow(),
-                                fallback_fee
+                                self.priority_fee.unwrap_or(0)
                             ));
-                            final_ixs.remove(1);
-                            final_ixs.insert(
-                                1,
-                                ComputeBudgetInstruction::set_compute_unit_price(fallback_fee),
-                            );
-                            tx = Transaction::new_with_payer(&final_ixs, Some(&fee_payer.pubkey()));
+                            self.priority_fee.unwrap_or(0)
                         }
-                    }
+                    };
+                    final_ixs.remove(1);
+                    final_ixs.insert(
+                        1,
+                        ComputeBudgetInstruction::set_compute_unit_price(dynamic_fee),
+                    );
+                    tx = Transaction::new_with_payer(&final_ixs, Some(&fee_payer.pubkey()));
                 }
-
+    
                 // Resign the tx
-                let (hash, _slot) = client
+                let (hash, _slot) = match client
                     .get_latest_blockhash_with_commitment(self.rpc_client.commitment())
                     .await
-                    .unwrap();
+                {
+                    Ok(result) => result,
+                    Err(err) => {
+                        progress_bar.set_message(format!(
+                            "{}: {}",
+                            "ERROR".bold().red(),
+                            err.kind().to_string()
+                        ));
+                        sleep(Duration::from_millis(GATEWAY_DELAY)).await;
+                        attempts += 1;
+                        continue;
+                    }
+                };
                 if signer.pubkey() == fee_payer.pubkey() {
                     tx.sign(&[&signer], hash);
                 } else {
                     tx.sign(&[&signer, &fee_payer], hash);
                 }
             }
-
+    
             // Send transaction
             match client.send_transaction_with_config(&tx, send_cfg).await {
                 Ok(sig) => {
@@ -154,10 +161,9 @@ impl Miner {
                         progress_bar.finish_with_message(format!("Sent: {}", sig));
                         return Ok(sig);
                     }
-
+    
                     // Confirm transaction
                     for _ in 0..CONFIRM_RETRIES {
-                        // Use asynchronous sleep
                         sleep(Duration::from_millis(CONFIRM_DELAY)).await;
                         match client.get_signature_statuses(&[sig]).await {
                             Ok(signature_statuses) => {
@@ -198,7 +204,7 @@ impl Miner {
                                     }
                                 }
                             }
-
+    
                             // Handle confirmation errors
                             Err(err) => {
                                 progress_bar.set_message(format!(
@@ -210,7 +216,7 @@ impl Miner {
                         }
                     }
                 }
-
+    
                 // Handle submit errors
                 Err(err) => {
                     progress_bar.set_message(format!(
@@ -220,7 +226,7 @@ impl Miner {
                     ));
                 }
             }
-
+    
             // Retry
             sleep(Duration::from_millis(GATEWAY_DELAY)).await;
             attempts += 1;
