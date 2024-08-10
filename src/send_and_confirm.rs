@@ -25,7 +25,6 @@ use crate::Miner;
 const MIN_SOL_BALANCE: f64 = 0.00005;
 
 const RPC_RETRIES: usize = 0;
-//const SIMULATION_RETRIES: usize = 4;
 const GATEWAY_RETRIES: usize = 150;
 const CONFIRM_RETRIES: usize = 8;
 
@@ -49,7 +48,7 @@ impl Miner {
             println!("{}", err);
             return Err(ClientError {
                 request: None,
-                kind: ClientErrorKind::Custom(err),
+                kind: ClientErrorKind::Custom(err.to_string()),
             });
         }
     
@@ -72,7 +71,7 @@ impl Miner {
                     println!("Failed to get dynamic fee: {:?}", err);
                     return Err(ClientError {
                         request: None,
-                        kind: ClientErrorKind::Custom(err),
+                        kind: ClientErrorKind::Custom(err.to_string()),
                     });
                 }
             },
@@ -94,6 +93,8 @@ impl Miner {
             max_retries: Some(RPC_RETRIES),
             min_context_slot: None,
         };
+        let fee_payer = self.fee_payer();
+        let signer = self.signer();
         let mut tx = Transaction::new_with_payer(&final_ixs, Some(&fee_payer.pubkey()));
     
         // Submit tx
@@ -111,7 +112,7 @@ impl Miner {
                 if self.dynamic_fee {
                     let dynamic_fee = match self.dynamic_fee().await {
                         Ok(fee) => fee,
-                        Err(err) => {
+                        Err(_err) => {
                             progress_bar.println(format!(
                                 "{} Dynamic fees not supported by this RPC. Falling back to static value: {} microlamports",
                                 "WARNING".bold().yellow(),
@@ -129,7 +130,7 @@ impl Miner {
                 }
     
                 // Resign the tx
-                let (hash, _slot) = match client
+                let (hash, _slot) = match self.rpc_client
                     .get_latest_blockhash_with_commitment(self.rpc_client.commitment())
                     .await
                 {
@@ -153,7 +154,7 @@ impl Miner {
             }
     
             // Send transaction
-            match client.send_transaction_with_config(&tx, send_cfg).await {
+            match self.rpc_client.send_transaction_with_config(&tx, send_cfg).await {
                 Ok(sig) => {
                     // Skip confirmation
                     if skip_confirm {
@@ -164,7 +165,7 @@ impl Miner {
                     // Confirm transaction
                     for _ in 0..CONFIRM_RETRIES {
                         sleep(Duration::from_millis(CONFIRM_DELAY)).await;
-                        match client.get_signature_statuses(&[sig]).await {
+                        match self.rpc_client.get_signature_statuses(&[sig]).await {
                             Ok(signature_statuses) => {
                                 for status in signature_statuses.value {
                                     if let Some(status) = status {
@@ -205,11 +206,11 @@ impl Miner {
                             }
     
                             // Handle confirmation errors
-                            Err(err) => {
+                            Err(_err) => {
                                 progress_bar.set_message(format!(
                                     "{}: {}",
                                     "ERROR".bold().red(),
-                                    err.kind().to_string()
+                                    "Error getting signature statuses".to_string()
                                 ));
                             }
                         }
@@ -217,11 +218,11 @@ impl Miner {
                 }
     
                 // Handle submit errors
-                Err(err) => {
+                Err(_err) => {
                     progress_bar.set_message(format!(
                         "{}: {}",
                         "ERROR".bold().red(),
-                        err.kind().to_string()
+                        "Error sending transaction".to_string()
                     ));
                 }
             }
@@ -242,7 +243,7 @@ impl Miner {
         }
     }
 
-    pub async fn check_balance(&self) {
+    pub async fn check_balance(&self) -> ClientResult<()> {
         if let Ok(balance) = self
             .rpc_client
             .get_balance(&self.fee_payer().pubkey())
@@ -257,6 +258,7 @@ impl Miner {
                 );
             }
         }
+        Ok(())
     }
 
     // TODO
