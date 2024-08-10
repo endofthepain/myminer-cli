@@ -104,8 +104,6 @@ impl Miner {
                 "{}: {:12}x\n{}: {:.2} H/S",
                 "Multiplier".white().bold(),
                 format!("{:12}", Self::calculate_multiplier(proof.balance, config.top_balance)).blue(),
-                "Hash".white().bold(),
-                hash_rate as f64
             );
 
             last_balance = proof.balance;
@@ -173,7 +171,7 @@ impl Miner {
                             let prev_best_difficulty = global_best_difficulty.fetch_max(difficulty, Ordering::Relaxed);
     
                             if best_difficulty > prev_best_difficulty {
-                                cutoff_time += 10;
+                                cutoff_time += 00;
                             }
                         }
                     }
