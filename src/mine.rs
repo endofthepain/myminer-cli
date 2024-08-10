@@ -132,12 +132,13 @@ impl Miner {
         response.parse::<u64>().unwrap_or(0)
     }
 
-    async fn find_hash_par(
+    pub async fn find_hash_par(
         proof: Proof,
         mut cutoff_time: u64,
         cores: u64,
         min_difficulty: u32,
-    ) -> (Solution, u64) {
+    ) -> Solution {
+        // Set up threads and progress bar
         let (tx, rx) = channel();
         let progress_bar = Arc::new(spinner::new_progress_bar());
         let global_best_difficulty = Arc::new(AtomicU32::new(0));
@@ -157,7 +158,7 @@ impl Miner {
                 let mut memory = equix::SolverMemory::new();
                 let timer = Instant::now();
                 let mut nonce = u64::MAX.saturating_div(cores).saturating_mul(i);
-                let mut best_nonce = [0; 16]; // Correct size
+                let mut best_nonce = nonce;
                 let mut best_difficulty = 0;
                 let mut best_hash = Hash::default();
                 loop {
@@ -167,13 +168,14 @@ impl Miner {
                         &nonce.to_le_bytes(),
                     ) {
                         let difficulty = hx.difficulty();
-                        if u32::from(difficulty) > best_difficulty {
-                            best_nonce.copy_from_slice(&nonce.to_le_bytes()); // Copy 16 bytes
-                            best_difficulty = u32::from(difficulty);
+                        if difficulty.gt(&best_difficulty) {
+                            best_nonce = nonce;
+                            best_difficulty = difficulty;
                             best_hash = hx;
     
                             let prev_best_difficulty = global_best_difficulty.fetch_max(difficulty, Ordering::Relaxed);
-                            if u32::from(difficulty) > prev_best_difficulty {
+    
+                            if best_difficulty > prev_best_difficulty {
                                 cutoff_time += 10;
                             }
                         }
@@ -187,53 +189,64 @@ impl Miner {
                         let elapsed_time = start_time.elapsed().as_secs_f64();
                         let hash_rate = total_hashes as f64 / elapsed_time;
     
-                        if timer.elapsed().as_secs() >= cutoff_time {
+                        if timer.elapsed().as_secs().ge(&cutoff_time) {
                             if i == 0 {
                                 progress_bar.set_message(format!(
                                     "Mining... (difficulty {}, time {}, {:.2} H/s)",
                                     global_best_difficulty,
-                                    Self::format_duration(
-                                        (cutoff_time
-                                            .saturating_sub(timer.elapsed().as_secs() as u64)) as u32
+                                    format_duration(
+                                        cutoff_time.saturating_sub(timer.elapsed().as_secs()) as u32
                                     ),
                                     hash_rate,
                                 ));
                             }
-                            if global_best_difficulty >= min_difficulty {
+                            if global_best_difficulty.ge(&min_difficulty) {
                                 break;
                             }
                         } else if i == 0 {
                             progress_bar.set_message(format!(
                                 "Mining... (difficulty {}, time {}, {:.2} H/s)",
                                 global_best_difficulty,
-                                Self::format_duration(
-                                    (cutoff_time.saturating_sub(timer.elapsed().as_secs() as u64)) as u32
+                                format_duration(
+                                    cutoff_time.saturating_sub(timer.elapsed().as_secs()) as u32
                                 ),
                                 hash_rate,
                             ));
                         }
                     }
     
-                    nonce += cores;
+                    nonce += 1;
                 }
     
                 tx.send((best_nonce, best_difficulty, best_hash)).unwrap();
             });
         }
     
-        let mut best_nonce = [0; 16]; // Ensure it matches the expected size
+        let mut best_nonce = 0;
         let mut best_difficulty = 0;
         let mut best_hash = Hash::default();
+    
         for _ in 0..cores {
             let (nonce, difficulty, hash) = rx.recv().unwrap();
-            if u32::from(difficulty) > best_difficulty {
-                best_difficulty = u32::from(difficulty);
-                best_nonce.copy_from_slice(&nonce);
+            if difficulty > best_difficulty {
+                best_difficulty = difficulty;
+                best_nonce = nonce;
                 best_hash = hash;
             }
         }
     
-        (Solution { n: best_nonce, d: best_difficulty }, global_total_hashes.load(Ordering::Relaxed))
+        let total_hashes = global_total_hashes.load(Ordering::Relaxed);
+        let elapsed_time = start_time.elapsed().as_secs_f64();
+        let hash_rate = total_hashes as f64 / elapsed_time;
+    
+        progress_bar.finish_with_message(format!(
+            "Best hash: {} (difficulty {}, {:.2} H/s)",
+            bs58::encode(best_hash.h).into_string(),
+            best_difficulty,
+            hash_rate,
+        ));
+    
+        Solution::new(best_difficulty, best_nonce.to_le_bytes())
     }
             
     pub fn check_num_cores(&self, cores: u64) {
