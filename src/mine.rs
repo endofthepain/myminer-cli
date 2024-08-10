@@ -101,7 +101,7 @@ impl Miner {
                 amount_u64_to_string(proof.balance.saturating_sub(last_balance)).green()
             );
             println!(
-                "{}: {:12}x\n{}: {:.2} H/S",
+                "{}: {:12}",
                 "Multiplier".white().bold(),
                 format!("{:12}", Self::calculate_multiplier(proof.balance, config.top_balance)).blue(),
             );
@@ -189,7 +189,7 @@ impl Miner {
                                 progress_bar.set_message(format!(
                                     "Mining... (difficulty {}, time {}, {:.2} H/s)",
                                     global_best_difficulty,
-                                    format_duration(
+                                    Self::format_duration(
                                         cutoff_time.saturating_sub(timer.elapsed().as_secs()) as u32
                                     ),
                                     hash_rate,
@@ -202,7 +202,7 @@ impl Miner {
                             progress_bar.set_message(format!(
                                 "Mining... (difficulty {}, time {}, {:.2} H/s)",
                                 global_best_difficulty,
-                                format_duration(
+                                Self::format_duration(
                                     cutoff_time.saturating_sub(timer.elapsed().as_secs()) as u32
                                 ),
                                 hash_rate,
@@ -241,9 +241,9 @@ impl Miner {
             hash_rate,
         ));
     
-        Solution::new(best_difficulty, best_nonce.to_le_bytes())
+        Solution::new(best_hash.h, best_nonce.to_le_bytes())
     }
-            
+                
     pub fn check_num_cores(&self, cores: u64) {
         let num_cores = num_cpus::get() as u64;
         if cores > num_cores {
