@@ -157,7 +157,7 @@ impl Miner {
                 let mut memory = equix::SolverMemory::new();
                 let timer = Instant::now();
                 let mut nonce = u64::MAX.saturating_div(cores).saturating_mul(i);
-                let mut best_nonce = [0; 16]; // Adjusted to match the expected size
+                let mut best_nonce = [0; 8]; // Correct size
                 let mut best_difficulty = 0;
                 let mut best_hash = Hash::default();
                 loop {
@@ -168,7 +168,7 @@ impl Miner {
                     ) {
                         let difficulty = hx.difficulty();
                         if u32::from(difficulty) > best_difficulty {
-                            best_nonce.copy_from_slice(&nonce.to_le_bytes()); // Copy to fit the array size
+                            best_nonce.copy_from_slice(&nonce.to_le_bytes()[..8]); // Copy 8 bytes
                             best_difficulty = u32::from(difficulty);
                             best_hash = hx;
     
@@ -221,7 +221,7 @@ impl Miner {
             });
         }
     
-        let mut best_nonce = [0; 16]; // Ensure it matches the expected size
+        let mut best_nonce = [0; 8]; // Ensure it matches the expected size
         let mut best_difficulty = 0;
         let mut best_hash = Hash::default();
         for _ in 0..cores {
@@ -235,7 +235,7 @@ impl Miner {
     
         (Solution { n: best_nonce, d: best_difficulty }, global_total_hashes.load(Ordering::Relaxed))
     }
-    
+        
     pub fn check_num_cores(&self, cores: u64) {
         let num_cores = num_cpus::get() as u64;
         if cores > num_cores {
