@@ -1,12 +1,12 @@
-use std::{
-    sync::{Arc, mpsc::channel},
-    sync::atomic::{AtomicU64, AtomicU32, Ordering},
-    time::{Instant, SystemTime},
-    thread,
-};
+use std::{sync::Arc, sync::atomic::{AtomicU64, AtomicU32, Ordering}, time::Instant};
+use std::thread;
+use std::sync::mpsc::channel;
 
 use colored::*;
-use drillx::{self, equix, Hash, Solution};
+use drillx::{
+    equix::{self},
+    Hash, Solution,
+};
 use ore_api::{
     consts::{BUS_ADDRESSES, BUS_COUNT, EPOCH_DURATION},
     state::{Bus, Config, Proof},
@@ -167,30 +167,34 @@ impl Miner {
                             best_nonce = nonce;
                             best_difficulty = difficulty;
                             best_hash = hx;
-    
-                            let prev_best_difficulty = global_best_difficulty.fetch_max(difficulty, Ordering::Relaxed);
-    
+
+                            // Update global best difficulty
+                            let prev_best_difficulty = global_best_difficulty.fetch_max(best_difficulty, Ordering::Relaxed);
+
+                            // Extend cutoff time if a new higher difficulty hash is found
                             if best_difficulty > prev_best_difficulty {
                                 cutoff_time += 00;
                             }
                         }
                     }
-    
+
                     global_total_hashes.fetch_add(1, Ordering::Relaxed);
-    
+
                     if nonce % 100 == 0 {
                         let global_best_difficulty = global_best_difficulty.load(Ordering::Relaxed);
                         let total_hashes = global_total_hashes.load(Ordering::Relaxed);
                         let elapsed_time = start_time.elapsed().as_secs_f64();
                         let hash_rate = total_hashes as f64 / elapsed_time;
-    
+
                         if timer.elapsed().as_secs().ge(&cutoff_time) {
                             if i == 0 {
                                 progress_bar.set_message(format!(
                                     "Mining... (difficulty {}, time {}, {:.2} H/s)",
                                     global_best_difficulty,
-                                    Self::format_duration(
-                                        cutoff_time.saturating_sub(timer.elapsed().as_secs()) as u32
+                                    format_duration(
+                                        cutoff_time
+                                            .saturating_sub(timer.elapsed().as_secs())
+                                            as u32
                                     ),
                                     hash_rate,
                                 ));
@@ -202,17 +206,19 @@ impl Miner {
                             progress_bar.set_message(format!(
                                 "Mining... (difficulty {}, time {}, {:.2} H/s)",
                                 global_best_difficulty,
-                                Self::format_duration(
-                                    cutoff_time.saturating_sub(timer.elapsed().as_secs()) as u32
+                                format_duration(
+                                    cutoff_time.saturating_sub(timer.elapsed().as_secs())
+                                        as u32
                                 ),
                                 hash_rate,
                             ));
                         }
                     }
-    
+
                     nonce += 1;
                 }
-    
+
+                // Send the result back to the main thread
                 tx.send((best_nonce, best_difficulty, best_hash)).unwrap();
             });
         }
@@ -233,7 +239,7 @@ impl Miner {
         let total_hashes = global_total_hashes.load(Ordering::Relaxed);
         let elapsed_time = start_time.elapsed().as_secs_f64();
         let hash_rate = total_hashes as f64 / elapsed_time;
-    
+
         progress_bar.finish_with_message(format!(
             "Best hash: {} (difficulty {}, {:.2} H/s)",
             bs58::encode(best_hash.h).into_string(),
@@ -246,26 +252,32 @@ impl Miner {
                 
     pub fn check_num_cores(&self, cores: u64) {
         let num_cores = num_cpus::get() as u64;
-        if cores > num_cores {
-            panic!("Number of cores specified exceeds available cores.");
+        if cores.gt(&num_cores) {
+            println!(
+                "{} Cannot exceeds available cores ({})",
+                "WARNING".bold().yellow(),
+                num_cores
+            );
         }
     }
 
     async fn should_reset(&self, config: Config) -> bool {
-        let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs() as i64;
-        let epoch_duration = EPOCH_DURATION as i64;
-        let last_reset_at = config.last_reset_at as i64;
-        let current_epoch = now / epoch_duration;
-        let last_epoch = last_reset_at / epoch_duration;
-        current_epoch > last_epoch
+        let clock = get_clock(&self.rpc_client).await;
+        config
+            .last_reset_at
+            .saturating_add(EPOCH_DURATION)
+            .saturating_sub(5)
+            .le(&clock.unix_timestamp)
     }
 
-    async fn get_cutoff(&self, proof: Proof, buffer_time: u32) -> u64 {
-        let current_time = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs() as u64;
-        let epoch_duration = EPOCH_DURATION as u64;
-        let last_hash_at = proof.last_hash_at as u64;
-        let epoch_diff = (current_time / epoch_duration).saturating_sub(last_hash_at / epoch_duration);
-        (last_hash_at + (epoch_diff * epoch_duration) + buffer_time as u64) as u64
+    async fn get_cutoff(&self, proof: Proof, buffer_time: u64) -> u64 {
+        let clock = get_clock(&self.rpc_client).await;
+        proof
+            .last_hash_at
+            .saturating_add(60)
+            .saturating_sub(buffer_time as i64)
+            .saturating_sub(clock.unix_timestamp)
+            .max(0) as u64
     }
 
     async fn find_bus(&self) -> Pubkey {
