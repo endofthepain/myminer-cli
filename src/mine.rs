@@ -258,13 +258,14 @@ impl Miner {
     }
 
     async fn get_cutoff(&self, proof: Proof, buffer_time: u32) -> u64 {
-        let clock = get_clock(&self.rpc_client).await as u64; // Ensure clock is u64
-        let epoch_duration = EPOCH_DURATION as u64;
-        let current_epoch = clock / epoch_duration;
-        let proof_epoch = proof.last_hash_at / epoch_duration;
-        let epoch_diff = (current_epoch as i64 - proof_epoch as i64) as u64;
+        let clock = get_clock(&self.rpc_client).await;
+        let clock = clock as u64; // Ensure get_clock returns a type convertible to u64        
+        let epoch_duration = EPOCH_DURATION as i64; // Ensure consistent type
+        let current_epoch = clock as i64 / epoch_duration;
+        let proof_epoch = proof.last_hash_at as i64 / epoch_duration;
+        let epoch_diff = (current_epoch - proof_epoch) as u64;
     
-        (proof.last_hash_at as i64 + (epoch_diff as i64 * epoch_duration as i64) + (buffer_time as i64)) as u64
+        (proof.last_hash_at as i64 + (epoch_diff * epoch_duration) + buffer_time as i64) as u64
     }
     
     fn format_duration(seconds: u32) -> String {
