@@ -252,9 +252,8 @@ impl Miner {
         let epoch_duration = EPOCH_DURATION as i64;
         let last_reset_at = config.last_reset_at as i64;
         let current_epoch = now / epoch_duration;
-        let last_reset_epoch = last_reset_at / epoch_duration;
-        let reset_period = 24; // Example reset period in hours
-        (current_epoch - last_reset_epoch) >= reset_period
+        let last_epoch = last_reset_at / epoch_duration;
+        current_epoch > last_epoch
     }
 
     async fn get_cutoff(&self, proof: Proof, buffer_time: u32) -> u64 {
@@ -266,7 +265,6 @@ impl Miner {
     }
 
     async fn find_bus(&self) -> Pubkey {
-        // Fetch the bus with the largest balance
         if let Ok(accounts) = self.rpc_client.get_multiple_accounts(&BUS_ADDRESSES).await {
             let mut top_bus_balance: u64 = 0;
             let mut top_bus = BUS_ADDRESSES[0];
@@ -282,6 +280,10 @@ impl Miner {
             }
             return top_bus;
         }
+
+        let i = rand::thread_rng().gen_range(0..BUS_COUNT);
+        BUS_ADDRESSES[i]
+    }
 
     fn calculate_multiplier(balance: u64, top_balance: u64) -> u64 {
         if top_balance == 0 {
