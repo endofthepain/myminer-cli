@@ -158,7 +158,7 @@ impl Miner {
                 let mut memory = equix::SolverMemory::new();
                 let timer = Instant::now();
                 let mut nonce = u64::MAX.saturating_div(cores).saturating_mul(i);
-                let mut best_nonce = [0; 16];
+                let mut best_nonce = [0; 8]; // Adjust to match the expected size
                 let mut best_difficulty = 0;
                 let mut best_hash = Hash::default();
                 loop {
@@ -168,13 +168,13 @@ impl Miner {
                         &nonce.to_le_bytes(),
                     ) {
                         let difficulty = hx.difficulty();
-                        if u64::from(difficulty) > best_difficulty {
-                            best_nonce.copy_from_slice(&nonce.to_le_bytes()[..16]);
-                            best_difficulty = u64::from(difficulty);
+                        if u32::from(difficulty) > best_difficulty {
+                            best_nonce.copy_from_slice(&nonce.to_le_bytes()[..8]); // Copy to fit the array size
+                            best_difficulty = u32::from(difficulty);
                             best_hash = hx;
     
                             let prev_best_difficulty = global_best_difficulty.fetch_max(difficulty, Ordering::Relaxed);
-                            if best_difficulty > u64::from(prev_best_difficulty) {
+                            if u32::from(difficulty) > prev_best_difficulty {
                                 cutoff_time += 10;
                             }
                         }
@@ -222,13 +222,13 @@ impl Miner {
             });
         }
     
-        let mut best_nonce = [0; 16];
+        let mut best_nonce = [0; 8]; // Ensure it matches the expected size
         let mut best_difficulty = 0;
         let mut best_hash = Hash::default();
         for _ in 0..cores {
             let (nonce, difficulty, hash) = rx.recv().unwrap();
-            if difficulty > best_difficulty {
-                best_difficulty = difficulty;
+            if u32::from(difficulty) > best_difficulty {
+                best_difficulty = u32::from(difficulty);
                 best_nonce.copy_from_slice(&nonce);
                 best_hash = hash;
             }
@@ -236,6 +236,7 @@ impl Miner {
     
         (Solution { n: best_nonce, d: best_difficulty }, global_total_hashes.load(Ordering::Relaxed))
     }
+    
     
     pub fn check_num_cores(&self, cores: u64) {
         let num_cores = num_cpus::get() as u64;
