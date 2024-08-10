@@ -1,7 +1,7 @@
 use std::{
     sync::{Arc, mpsc::channel},
     sync::atomic::{AtomicU64, AtomicU32, Ordering},
-    time::Instant,
+    time::{Instant, SystemTime},
     thread,
 };
 
@@ -62,7 +62,7 @@ impl Miner {
                 ixs.push(ore_api::instruction::reset(signer.pubkey()));
             }
 
-            let cutoff_time = self.get_cutoff(proof, args.buffer_time).await;
+            let cutoff_time = self.get_cutoff(proof, args.buffer_time.try_into().unwrap()).await;
             let (solution, hash_rate) = Self::find_hash_par(
                 proof,
                 cutoff_time,
@@ -225,14 +225,14 @@ impl Miner {
         }
 
         // Collect results from threads
-        let mut best_nonce = [0; 8]; // Adjust according to Solution definition
+        let mut best_nonce = [0; 16]; // Adjust according to Solution definition
         let mut best_difficulty = 0;
         let mut best_hash = Hash::default();
         for _ in 0..cores {
             let (nonce_bytes, difficulty, hash) = rx.recv().unwrap();
             if difficulty > best_difficulty {
                 best_difficulty = difficulty;
-                best_nonce = nonce_bytes;
+                best_nonce.copy_from_slice(&nonce_bytes[..16]); // Copy to fit the array
                 best_hash = hash;
             }
         }
@@ -248,7 +248,7 @@ impl Miner {
     }
 
     async fn should_reset(&self, config: Config) -> bool {
-        let now = Instant::now().duration_since(Instant::UNIX_EPOCH).as_secs() as i64;
+        let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs() as i64;
         let epoch_duration = EPOCH_DURATION as i64;
         let last_reset_at = config.last_reset_at as i64;
         let current_epoch = now / epoch_duration;
@@ -258,20 +258,11 @@ impl Miner {
     }
 
     async fn get_cutoff(&self, proof: Proof, buffer_time: u32) -> u64 {
-        let clock = get_clock(&self.rpc_client).await;
-        let clock = clock as u64; // Ensure get_clock returns a type convertible to u64        
-        let epoch_duration = EPOCH_DURATION as i64; // Ensure consistent type
-        let current_epoch = clock as i64 / epoch_duration;
-        let proof_epoch = proof.last_hash_at as i64 / epoch_duration;
-        let epoch_diff = (current_epoch - proof_epoch) as u64;
-    
-        (proof.last_hash_at as i64 + (epoch_diff * epoch_duration) + buffer_time as i64) as u64
-    }
-    
-    fn format_duration(seconds: u32) -> String {
-        let minutes = seconds / 60;
-        let seconds = seconds % 60;
-        format!("{}m {}s", minutes, seconds)
+        let current_time = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs() as u64;
+        let epoch_duration = EPOCH_DURATION as u64;
+        let last_hash_at = proof.last_hash_at as u64;
+        let epoch_diff = (current_time / epoch_duration).saturating_sub(last_hash_at / epoch_duration);
+        (last_hash_at + (epoch_diff * epoch_duration) + buffer_time as u64) as u64
     }
 
     async fn find_bus(&self) -> Pubkey {
@@ -292,12 +283,20 @@ impl Miner {
             return top_bus;
         }
 
-        // Otherwise return a random bus
-        let i = rand::thread_rng().gen_range(0..BUS_COUNT);
-        BUS_ADDRESSES[i]
+    fn calculate_multiplier(balance: u64, top_balance: u64) -> u64 {
+        if top_balance == 0 {
+            0
+        } else {
+            (balance as f64 / top_balance as f64 * 100.0).round() as u64
+        }
     }
 
-    fn calculate_multiplier(balance: u64, top_balance: u64) -> f64 {
-        1.0 + (balance as f64 / top_balance as f64).min(1.0)
+    fn format_duration(seconds: u32) -> String {
+        format!(
+            "{:02}:{:02}:{:02}",
+            seconds / 3600,
+            (seconds % 3600) / 60,
+            seconds % 60
+        )
     }
 }
