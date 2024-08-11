@@ -137,7 +137,7 @@ impl Miner {
                             let prev_best_difficulty = global_best_difficulty.fetch_max(best_difficulty, Ordering::Relaxed);
                             
                             if best_difficulty > prev_best_difficulty {
-                                cutoff_time += 60; // Extend cutoff time by 60 seconds
+                                cutoff_time += 00; // Extend cutoff time by 60 seconds
                             }
                         }
                     }
