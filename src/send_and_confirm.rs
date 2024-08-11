@@ -176,8 +176,11 @@ impl Miner {
                             "ERROR".bold().red(),
                             err.kind().to_string()
                         ));                        
-                        request: None,
-                        kind: ClientErrorKind::Custom("Error Instruction :(".into()),
+                        return Err(ClientError {
+                            request: None,
+                            kind: ClientErrorKind::Custom("Error Instruction".into()),
+                        });
+
                     }
                 };
                 if signer.pubkey() == fee_payer.pubkey() {
@@ -195,7 +198,7 @@ impl Miner {
                         progress_bar.finish_with_message(format!("Sent: {}", sig));
                         return Ok(sig);
                     }
-
+            
                     // Confirm transaction
                     for _ in 0..CONFIRM_RETRIES {
                         sleep(Duration::from_millis(CONFIRM_DELAY)).await;
@@ -231,7 +234,7 @@ impl Miner {
                                                         "OK".bold().green(),
                                                         sig
                                                     ));
-                                                    return Ok(sig);
+                                                    return Ok(sig);            
                                                 }
                                             }
                                         }
@@ -258,8 +261,10 @@ impl Miner {
                         "ERROR".bold().red(),
                         "Error sending transaction".to_string()
                     ));
-                    request: None,
-                    kind: ClientErrorKind::Custom("Error Instruction :(".into()),
+                    return Err(ClientError {
+                        request: None,
+                        kind: ClientErrorKind::Custom("Error Instruction".into()),
+                    });
                 }
             }
 
