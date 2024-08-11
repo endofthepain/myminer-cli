@@ -24,7 +24,7 @@ use solana_transaction_status::{TransactionConfirmationStatus, UiTransactionEnco
 
 use crate::Miner;
 
-const MIN_SOL_BALANCE: f64 = 0.00005;
+const MIN_SOL_BALANCE: f64 = 0.001;
 const RPC_RETRIES: usize = 0;
 const GATEWAY_RETRIES: usize = 150;
 const CONFIRM_RETRIES: usize = 8;
@@ -136,7 +136,7 @@ impl Miner {
         let progress_bar = spinner::new_progress_bar();
         let mut attempts = 0;
         loop {
-            progress_bar.set_message(format!(
+            progress_bar.finish_with_message(format!(
                 "Submitting transaction... (attempt {})",
                 attempts
             ));
@@ -171,13 +171,11 @@ impl Miner {
                 {
                     Ok(result) => result,
                     Err(err) => {
-                        progress_bar.set_message(format!(
+                        progress_bar.finish_with_message(format!(
                             "{}: {}",
                             "ERROR".bold().red(),
                             err.kind().to_string()
-                        ));
-                        sleep(Duration::from_millis(GATEWAY_DELAY)).await;
-                        attempts += 1;
+                        ));                        
                         continue;
                     }
                 };
@@ -242,7 +240,7 @@ impl Miner {
 
                             // Handle confirmation errors
                             Err(_err) => {
-                                progress_bar.set_message(format!(
+                                progress_bar.finish_with_message(format!(
                                     "{}: {}",
                                     "ERROR".bold().red(),
                                     "Error getting signature statuses".to_string()
@@ -254,11 +252,12 @@ impl Miner {
 
                 // Handle submit errors
                 Err(_err) => {
-                    progress_bar.set_message(format!(
+                    progress_bar.finish_with_message(format!(
                         "{}: {}",
                         "ERROR".bold().red(),
                         "Error sending transaction".to_string()
                     ));
+                    continue;
                 }
             }
 
