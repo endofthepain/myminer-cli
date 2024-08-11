@@ -104,7 +104,10 @@ impl Miner {
     
         let start_time = Instant::now();
     
-        for i in 0..cores {
+        // Use available cores or the provided value, whichever is smaller
+        let num_threads = std::cmp::min(cores, num_cpus::get() as u64);
+    
+        for i in 0..num_threads {
             let tx = tx.clone();
             let global_best_difficulty = Arc::clone(&global_best_difficulty);
             let global_total_hashes = Arc::clone(&global_total_hashes);
@@ -114,10 +117,11 @@ impl Miner {
             thread::spawn(move || {
                 let mut memory = equix::SolverMemory::new();
                 let timer = Instant::now();
-                let mut nonce = u64::MAX.saturating_div(cores).saturating_mul(i);
+                let mut nonce = u64::MAX.saturating_div(num_threads).saturating_mul(i);
                 let mut best_nonce = nonce;
                 let mut best_difficulty = 0;
                 let mut best_hash = Hash::default();
+                
                 loop {
                     if let Ok(hx) = drillx::hash_with_memory(
                         &mut memory,
@@ -133,7 +137,7 @@ impl Miner {
                             let prev_best_difficulty = global_best_difficulty.fetch_max(best_difficulty, Ordering::Relaxed);
                             
                             if best_difficulty > prev_best_difficulty {
-                                cutoff_time += 00; 
+                                cutoff_time += 00;
                             }
                         }
                     }
@@ -175,6 +179,33 @@ impl Miner {
             });
         }
     
+        let mut best_nonce = 0;
+        let mut best_difficulty = 0;
+        let mut best_hash = Hash::default();
+    
+        for _ in 0..num_threads {
+            let (nonce, difficulty, hash) = rx.recv().unwrap();
+            if difficulty > best_difficulty {
+                best_difficulty = difficulty;
+                best_nonce = nonce;
+                best_hash = hash;
+            }
+        }
+    
+        let total_hashes = global_total_hashes.load(Ordering::Relaxed);
+        let elapsed_time = start_time.elapsed().as_secs_f64();
+        let hash_rate = total_hashes as f64 / elapsed_time;
+    
+        progress_bar.finish_with_message(format!(
+            "Best hash: {} (difficulty {}, {:.2} H/s)",
+            bs58::encode(best_hash.h).into_string(),
+            best_difficulty,
+            hash_rate,
+        ));
+    
+        Solution::new(best_hash.d, best_nonce.to_le_bytes())
+    }
+        
         let mut best_nonce = 0;
         let mut best_difficulty = 0;
         let mut best_hash = Hash::default();
