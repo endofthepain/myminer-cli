@@ -36,7 +36,8 @@ impl Miner {
         let mut last_hash_at = 0;
         let mut last_balance = 0;
         loop {
-            let config = get_config(&self.rpc_client).await;
+            let rpc_client_clone = Arc::clone(&self.rpc_client);
+            let config = tokio::spawn(async move { get_config(&rpc_client_clone).await }).await.unwrap();
             let proof = get_updated_proof_with_authority(&self.rpc_client, signer.pubkey(), last_hash_at).await;
 
             // Fetch the current Sol balance
@@ -137,7 +138,7 @@ impl Miner {
                             let prev_best_difficulty = global_best_difficulty.fetch_max(best_difficulty, Ordering::Relaxed);
                             
                             if best_difficulty > prev_best_difficulty {
-                                cutoff_time += 00; // Extend cutoff time by 60 seconds
+                                cutoff_time += 00;
                             }
                         }
                     }
@@ -150,7 +151,7 @@ impl Miner {
                         let elapsed_time = start_time.elapsed().as_secs_f64();
                         let hash_rate = total_hashes as f64 / elapsed_time;
     
-                        if timer.elapsed().as_secs().ge(&cutoff_time) {
+                        if timer.elapsed().as_secs() >= cutoff_time {
                             if i == 0 {
                                 progress_bar.set_message(format!(
                                     "Mining... (difficulty {}, time {}, {:.2} H/s)",
@@ -159,7 +160,7 @@ impl Miner {
                                     hash_rate,
                                 ));
                             }
-                            if global_best_difficulty.ge(&min_difficulty) {
+                            if global_best_difficulty >= min_difficulty {
                                 break;
                             }
                         } else if i == 0 {
@@ -197,14 +198,14 @@ impl Miner {
         let hash_rate = total_hashes as f64 / elapsed_time;
     
         progress_bar.finish_with_message(format!(
-            "Best hash: {} (difficulty {}, {:.2} H/s)",
+            "Best Hash: {} (difficulty {}, {:.2} H/s)",
             bs58::encode(best_hash.h).into_string(),
             best_difficulty,
             hash_rate,
         ));
     
         Solution::new(best_hash.d, best_nonce.to_le_bytes())
-    }    
+    }        
     
     pub fn check_num_cores(&self, cores: u64) {
         let num_cores = num_cpus::get() as u64;
