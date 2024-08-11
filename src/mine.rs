@@ -137,7 +137,7 @@ impl Miner {
                             let prev_best_difficulty = global_best_difficulty.fetch_max(best_difficulty, Ordering::Relaxed);
                             
                             if best_difficulty > prev_best_difficulty {
-                                cutoff_time += 00;
+                                cutoff_time += 60; // Extend cutoff time by 60 seconds
                             }
                         }
                     }
@@ -204,34 +204,7 @@ impl Miner {
         ));
     
         Solution::new(best_hash.d, best_nonce.to_le_bytes())
-    }
-        
-        let mut best_nonce = 0;
-        let mut best_difficulty = 0;
-        let mut best_hash = Hash::default();
-    
-        for _ in 0..cores {
-            let (nonce, difficulty, hash) = rx.recv().unwrap();
-            if difficulty > best_difficulty {
-                best_difficulty = difficulty;
-                best_nonce = nonce;
-                best_hash = hash;
-            }
-        }
-    
-        let total_hashes = global_total_hashes.load(Ordering::Relaxed);
-        let elapsed_time = start_time.elapsed().as_secs_f64();
-        let hash_rate = total_hashes as f64 / elapsed_time;
-    
-        progress_bar.finish_with_message(format!(
-            "Best hash: {} (difficulty {}, {:.2} H/s)",
-            bs58::encode(best_hash.h).into_string(),
-            best_difficulty,
-            hash_rate,
-        ));
-    
-        Solution::new(best_hash.d, best_nonce.to_le_bytes())
-    }
+    }    
     
     pub fn check_num_cores(&self, cores: u64) {
         let num_cores = num_cpus::get() as u64;
