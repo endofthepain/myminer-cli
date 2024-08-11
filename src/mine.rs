@@ -44,7 +44,7 @@ impl Miner {
 
             // Create the output message
             let output_message = format!(
-                "{}\n\n{}: {:.9} SOL\n\n{}: {}\n{}  {}: {:12}x",
+                "{}\n\n{}: {:.9} SOL\n{}: {}\n{}  {}: {:12}x",
                 "-".repeat(40).bold().cyan(),
                 "SOL Balance".bold().green(), current_sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
                 "ORE Stake".bold().yellow(), amount_u64_to_string(proof.balance),
@@ -92,26 +92,25 @@ impl Miner {
 
     async fn find_hash_par(
         proof: Proof,
-        mut cutoff_time: u64,  // Make cutoff_time mutable
+        mut cutoff_time: u64,
         cores: u64,
         min_difficulty: u32,
     ) -> Solution {
-        // Create a thread pool and use a channel for load balancing
         let (tx, rx) = channel();
         let progress_bar = Arc::new(spinner::new_progress_bar());
         let global_best_difficulty = Arc::new(AtomicU32::new(0));
         let global_total_hashes = Arc::new(AtomicU64::new(0));
         progress_bar.set_message("Mining...");
-
+    
         let start_time = Instant::now();
-
+    
         for i in 0..cores {
             let tx = tx.clone();
             let global_best_difficulty = Arc::clone(&global_best_difficulty);
             let global_total_hashes = Arc::clone(&global_total_hashes);
             let proof = proof.clone();
             let progress_bar = progress_bar.clone();
-
+    
             thread::spawn(move || {
                 let mut memory = equix::SolverMemory::new();
                 let timer = Instant::now();
@@ -130,35 +129,29 @@ impl Miner {
                             best_nonce = nonce;
                             best_difficulty = difficulty;
                             best_hash = hx;
-
-                            // Update global best difficulty
+    
                             let prev_best_difficulty = global_best_difficulty.fetch_max(best_difficulty, Ordering::Relaxed);
                             
-                            // Extend cutoff time if a new higher difficulty hash is found
                             if best_difficulty > prev_best_difficulty {
-                                cutoff_time += 00;
+                                cutoff_time += 60; // Extend cutoff time by 60 seconds
                             }
                         }
                     }
-
+    
                     global_total_hashes.fetch_add(1, Ordering::Relaxed);
-
+    
                     if nonce % 100 == 0 {
                         let global_best_difficulty = global_best_difficulty.load(Ordering::Relaxed);
                         let total_hashes = global_total_hashes.load(Ordering::Relaxed);
                         let elapsed_time = start_time.elapsed().as_secs_f64();
                         let hash_rate = total_hashes as f64 / elapsed_time;
-
+    
                         if timer.elapsed().as_secs().ge(&cutoff_time) {
                             if i == 0 {
                                 progress_bar.set_message(format!(
                                     "Mining... (difficulty {}, time {}, {:.2} H/s)",
                                     global_best_difficulty,
-                                    format_duration(
-                                        cutoff_time
-                                            .saturating_sub(timer.elapsed().as_secs())
-                                            as u32
-                                    ),
+                                    format_duration(cutoff_time.saturating_sub(timer.elapsed().as_secs()) as u32),
                                     hash_rate,
                                 ));
                             }
@@ -169,28 +162,23 @@ impl Miner {
                             progress_bar.set_message(format!(
                                 "Mining... (difficulty {}, time {}, {:.2} H/s)",
                                 global_best_difficulty,
-                                format_duration(
-                                    cutoff_time.saturating_sub(timer.elapsed().as_secs())
-                                        as u32
-                                ),
+                                format_duration(cutoff_time.saturating_sub(timer.elapsed().as_secs()) as u32),
                                 hash_rate,
                             ));
                         }
                     }
-
+    
                     nonce += 1;
                 }
-
-                // Send the result back to the main thread
+    
                 tx.send((best_nonce, best_difficulty, best_hash)).unwrap();
             });
         }
-
-        // Collect results from threads
+    
         let mut best_nonce = 0;
         let mut best_difficulty = 0;
         let mut best_hash = Hash::default();
-
+    
         for _ in 0..cores {
             let (nonce, difficulty, hash) = rx.recv().unwrap();
             if difficulty > best_difficulty {
@@ -199,21 +187,21 @@ impl Miner {
                 best_hash = hash;
             }
         }
-
+    
         let total_hashes = global_total_hashes.load(Ordering::Relaxed);
         let elapsed_time = start_time.elapsed().as_secs_f64();
         let hash_rate = total_hashes as f64 / elapsed_time;
-
+    
         progress_bar.finish_with_message(format!(
             "Best hash: {} (difficulty {}, {:.2} H/s)",
             bs58::encode(best_hash.h).into_string(),
             best_difficulty,
             hash_rate,
         ));
-
+    
         Solution::new(best_hash.d, best_nonce.to_le_bytes())
     }
-
+    
     pub fn check_num_cores(&self, cores: u64) {
         let num_cores = num_cpus::get() as u64;
         if cores.gt(&num_cores) {
