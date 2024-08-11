@@ -62,7 +62,7 @@ impl Miner {
         let mut final_ixs = vec![];
         match compute_budget {
             ComputeBudget::Dynamic => {
-                final_ixs.push(ComputeBudgetInstruction::set_compute_unit_limit(1_400_000))
+                final_ixs.push(ComputeBudgetInstruction::set_compute_unit_limit(2_000_000))
             }
             ComputeBudget::Fixed(cus) => {
                 final_ixs.push(ComputeBudgetInstruction::set_compute_unit_limit(cus))
@@ -81,7 +81,7 @@ impl Miner {
                     });
                 }
             },
-            false => Some(self.priority_fee.unwrap_or(0)),
+            false => Some(self.priority_fee.unwrap_or(5000)),
         };
 
         final_ixs.push(ComputeBudgetInstruction::set_compute_unit_price(
@@ -176,7 +176,8 @@ impl Miner {
                             "ERROR".bold().red(),
                             err.kind().to_string()
                         ));                        
-                        continue;
+                        request: None,
+                        kind: ClientErrorKind::Custom("Error Instruction :(".into()),
                     }
                 };
                 if signer.pubkey() == fee_payer.pubkey() {
@@ -257,7 +258,8 @@ impl Miner {
                         "ERROR".bold().red(),
                         "Error sending transaction".to_string()
                     ));
-                    continue;
+                    request: None,
+                    kind: ClientErrorKind::Custom("Error Instruction :(".into()),
                 }
             }
 
