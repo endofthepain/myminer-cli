@@ -45,7 +45,7 @@ impl Miner {
 
             // Create the output message
             let output_message = format!(
-                "{}\n\n{}: {:.9} SOL\n{}: {}\n{}  {}: {:12}x",
+                "{}\n\n{}: {:.9} SOL\n{}: {} ORE\n{}  {}: {:12}x",
                 "-".repeat(40).bold().cyan(),
                 "SOL Balance".bold().green(), current_sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
                 "ORE Stake".bold().yellow(), amount_u64_to_string(proof.balance),
