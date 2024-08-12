@@ -41,6 +41,7 @@ struct Miner {
     pub dynamic_fee_max: Option<u64>,
     pub rpc_client: Arc<RpcClient>,
     pub fee_payer_filepath: Option<String>,
+    pub discord_webhook: Option<String>,
     pub jito_client: Arc<RpcClient>,
     pub tip: Arc<std::sync::RwLock<u64>>,
 }
@@ -144,6 +145,9 @@ struct Args {
     #[arg(long, help = "Enable dynamic priority fees", global = true)]
     dynamic_fee: bool,
 
+    #[arg(long, value_name = "DISCORD_WEBHOOK", global = true)]
+    discord_webhook: Option<String>,
+
     #[arg(
         long,
         value_name = "JITO", 
@@ -187,7 +191,7 @@ async fn main() {
     let fee_payer_filepath = args.fee_payer.unwrap_or(default_keypair.clone());
     let rpc_client = RpcClient::new_with_commitment(cluster, CommitmentConfig::confirmed());
     let jito_client =
-        RpcClient::new("https://mainnet.block-engine.jito.wtf/api/v1/transactions".to_string());
+        RpcClient::new("https://tokyo.mainnet.block-engine.jito.wtf/api/v1/transactions".to_string());
 
     let tip = Arc::new(RwLock::new(0_u64));
     let tip_clone = Arc::clone(&tip);
@@ -220,6 +224,7 @@ async fn main() {
         args.dynamic_fee,
         args.dynamic_fee_max,
         Some(fee_payer_filepath),
+        args.discord_webhook,
         Arc::new(jito_client),
         tip,
     ));
@@ -278,6 +283,7 @@ impl Miner {
         dynamic_fee: bool,
         dynamic_fee_max: Option<u64>,
         fee_payer_filepath: Option<String>,
+        discord_webhook: Option<String>,
         jito_client: Arc<RpcClient>,
         tip: Arc<std::sync::RwLock<u64>>,
     ) -> Self {
@@ -289,6 +295,7 @@ impl Miner {
             dynamic_fee,
             dynamic_fee_max,
             fee_payer_filepath,
+            discord_webhook,
             jito_client,
             tip,
         }

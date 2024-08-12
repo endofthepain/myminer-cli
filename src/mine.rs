@@ -16,6 +16,8 @@ use rand::Rng;
 use solana_program::pubkey::Pubkey;
 use solana_rpc_client::spinner;
 use solana_sdk::signer::Signer;
+use reqwest::Client;
+use serde_json::json;
 
 use crate::{
     args::MineArgs,
@@ -47,7 +49,7 @@ impl Miner {
             let output_message = format!(
                 "{}\n\n{}: {:.9} SOL\n{}: {} ORE\n{}  {}: {:12}x",
                 "-".repeat(40).bold().cyan(),
-                "SOL Balance".bold().green(), current_sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
+                "SOL Balance".bold().red(), current_sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
                 "ORE Stake".bold().yellow(), amount_u64_to_string(proof.balance),
                 if last_hash_at > 0 {
                     format!(
@@ -88,6 +90,34 @@ impl Miner {
             self.send_and_confirm(&ixs, ComputeBudget::Fixed(compute_budget), false)
                 .await
                 .ok();
+
+                let http_client = Client::new();
+
+                let payload = json!({
+                    "content": format!(
+                        "{}\n\n{}: {:.9} SOL\n{}: {} ORE\n{}  {}: {:12}x",
+                        "-".repeat(40).bold().cyan(),
+                        "SOL Balance".bold().red(), current_sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
+                        "ORE Stake".bold().yellow(), amount_u64_to_string(proof.balance),
+                        if last_hash_at > 0 {
+                            format!(
+                                "{}{}: {} ORE\n",
+                                " ".repeat(4), "Change".bold().green(),
+                                amount_u64_to_string(proof.balance.saturating_sub(last_balance))
+                            )
+                        } else {
+                            "".to_string()
+                        },
+                        "Multiplier".bold().magenta(), calculate_multiplier(proof.balance, config.top_balance)
+                    ),
+                });
+    
+                let discord_webhook_url = self.discord_webhook.as_deref().expect("Discord webhook URL must be set");
+    
+                let _ = http_client.post(discord_webhook_url)
+                    .json(&payload)
+                    .send()
+                    .await;                
         }
     }
 
