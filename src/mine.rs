@@ -45,22 +45,36 @@ impl Miner {
             // Fetch the current Sol balance
             let current_sol_balance = self.rpc_client.get_balance(&signer.pubkey()).await.unwrap_or(0);
 
+            // Fetch prices
+            let sol_price_usd = match get_solana_price_usd().await {
+                Ok(price) => price,
+                Err(_) => 0.0, // Handle the error case
+            };
+
+            let ore_price_usd = match get_ore_price_usd().await {
+                Ok(price) => price,
+                Err(_) => 0.0, // Handle the error case
+            };
+
+            // Calculate SOL balance in USD
+            let sol_balance_usd = (current_sol_balance as f64 / 1_000_000_000.0) * sol_price_usd;
+            
             // Create the output message
             let output_message = format!(
-                "{}\n\n{}: {:.9} SOL\n{}: {} ORE\n{}  {}: {:12}x",
+                "{}\n\n{}: {:.9} SOL\n{}: {} ORE\n{}  {}: {} ORE\n  {}: {:12}x",
                 "-".repeat(40).bold().cyan(),
-                "SOL Balance".bold().red(), current_sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
-                "ORE Stake".bold().yellow(), amount_u64_to_string(proof.balance),
+                "SOL Balance 🌟".bold().red(), current_sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
+                "ORE Stake 💰".bold().yellow(), amount_u64_to_string(proof.balance),
                 if last_hash_at > 0 {
                     format!(
                         "{}{}: {} ORE\n",
-                        " ".repeat(4), "Change".bold().green(),
+                        " ".repeat(4), "Change 🔄".bold().green(),
                         amount_u64_to_string(proof.balance.saturating_sub(last_balance))
                     )
                 } else {
                     "".to_string()
                 },
-                "Multiplier".bold().magenta(), calculate_multiplier(proof.balance, config.top_balance)
+                "Multiplier 📈".bold().magenta(), calculate_multiplier(proof.balance, config.top_balance)
             );
 
             // Print the formatted output
@@ -95,10 +109,12 @@ impl Miner {
 
                 let payload = json!({
                     "content": format!(
-                        "**{}**\n\n**SOL Balance**: {:.9} SOL 💸\n**ORE Stake**: {} ORE 🪙\n**Change**: {} ORE 🔄\n**Multiplier**: {:12}x 📈\n**Best Hash**: {}\n**Difficulty**: {} 🔢\n**Hash Rate**: {:.2} H/s ⚡",
+                        "**{}**\n\n**SOL Balance**: {:.9} SOL (approx. ${:.2}) 💸\n**ORE Stake**: {} ORE (approx. ${:.2})\n**Change**: {} ORE 🔄\n**Multiplier**: {:12}x 📈\n**Best Hash**: {}\n**Difficulty**: {} 🔢\n**Hash Rate**: {:.2} H/s ⚡",
                         "-".repeat(40),
-                        current_sol_balance as f64 / 1_000_000_000.0,
+                        current_sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
+                        sol_balance_usd,
                         amount_u64_to_string(proof.balance),
+                        proof.balance as f64 * ore_price_usd, // Convert ORE to USD
                         amount_u64_to_string(proof.balance.saturating_sub(last_balance)),
                         calculate_multiplier(proof.balance, config.top_balance),
                         best_hash_encoded,
