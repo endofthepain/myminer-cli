@@ -95,7 +95,7 @@ impl Miner {
 
                 let payload = json!({
                     "content": format!(
-                        "**{}**\n\n**SOL Balance**: {:.9} SOL\n**ORE Stake**: {} ORE\n**Change**: {} ORE\n**Multiplier**: {:12}x\n**Best Hash**: {}\n**Difficulty**: {}\n**Hash Rate**: {:.2} H/s",
+                        "**{}**\n\n**SOL Balance**: {:.9} SOL 💸\n**ORE Stake**: {} ORE 🪙\n**Change**: {} ORE 🔄\n**Multiplier**: {:12}x 📈\n**Best Hash**: {}\n**Difficulty**: {} 🔢\n**Hash Rate**: {:.2} H/s ⚡",
                         "-".repeat(40),
                         current_sol_balance as f64 / 1_000_000_000.0,
                         amount_u64_to_string(proof.balance),
