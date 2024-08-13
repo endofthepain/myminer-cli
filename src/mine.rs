@@ -149,7 +149,6 @@ impl Miner {
                 .ok();
         }
     }
-}
 
     async fn find_hash_par(
         proof: Proof,
