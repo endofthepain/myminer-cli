@@ -31,10 +31,6 @@ use crate::{
 
 use crate::price_fetcher::{get_solana_price_usd, get_ore_price_usd};
 
-fn format_amount_u64(amount: u64) -> String {
-    format!("{:0>10}", amount)
-}
-
 impl Miner {
     pub async fn mine(&self, args: MineArgs) {
         let signer = self.signer();
@@ -62,7 +58,7 @@ impl Miner {
 
             // Create the output message
             let output_message = format!(
-                "{}\n\n**{}**: {:.9} SOL (approx. ${:.2})\n**{}**: {:.11} ORE (approx. ${:.2})\n**{}**: {}\n**{}**: {:12}x",
+                "{}\n\n{}: {:.9} SOL (approx. ${:.2})\n{}: {} ORE (approx. ${:.2})\n{}  {}: {:12}x",
                 "-".repeat(40).bold().cyan(),
                 "SOL Balance".bold().red(),
                 current_sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
@@ -74,10 +70,10 @@ impl Miner {
                     format!(
                         "{}{}: {:.11} ORE\n",
                         " ".repeat(4), "Change".bold().green(),
-                        (proof.balance.saturating_sub(last_balance) as f64 / 1_000_000_000_000.0)
+                        (proof.balance.saturating_sub(last_balance) as f64 / 1_000_000_000_000.0) // Format change with 11 decimal places
                     )
                 } else {
-                    "".to_string()
+                    "No Change".to_string()
                 },
                 "Multiplier".bold().magenta(),
                 calculate_multiplier(proof.balance, config.top_balance)
