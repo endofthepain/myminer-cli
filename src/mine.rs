@@ -110,7 +110,7 @@ impl Miner {
                 let timestamp = Utc::now().to_rfc3339(); // Get the current timestamp in ISO 8601 format
                 let date_time = format_date_time(); // Get formatted date and time
     
-                let pickaxe_line = "⛏️".repeat(10); // Adjust the number as needed
+                let pickaxe_line = "⛏️".repeat(3); // Adjust the number as needed
     
                 let payload = json!({
                     "content": format!(
