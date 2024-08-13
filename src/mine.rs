@@ -114,16 +114,16 @@ impl Miner {
                 } else {
                     "No Change".to_string()
                 };
-
+                
                 let payload = json!({
                     "content": format!(
                         "**{}**\n\n**SOL Balance 🌟**: {:.9} SOL (approx. ${:.2}) 💸\n**ORE Stake 💰**: {:.11} ORE (approx. ${:.2})\n**Change 🔄**: {}\n**Multiplier 📈**: {:12}x",
                         "-".repeat(40),
                         current_sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
                         (current_sol_balance as f64 / 1_000_000_000.0) * sol_price_usd,
-                        ore_balance, // Updated to show 11 decimal places
+                        ore_balance, // Ensure this shows 11 decimal places
                         ore_value_usd,
-                        formatted_change,
+                        formatted_change, // Ensure this is correctly formatted
                         calculate_multiplier(proof.balance, config.top_balance)
                     ),
                     "timestamp": timestamp // Ensure this is included
