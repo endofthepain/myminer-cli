@@ -16,7 +16,6 @@ use solana_sdk::{clock::Clock, hash::Hash};
 use spl_associated_token_account::get_associated_token_address;
 use tokio::time::sleep;
 use chrono::Utc;
-use chrono::format::strftime;
 
 pub const BLOCKHASH_QUERY_RETRIES: usize = 5;
 pub const BLOCKHASH_QUERY_DELAY: u64 = 500;
