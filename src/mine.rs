@@ -95,20 +95,15 @@ impl Miner {
 
                 let payload = json!({
                     "content": format!(
-                        "{}\n\n{}: {:.9} SOL\n{}: {} ORE\n{}  {}: {:12}x",
-                        "-".repeat(40).bold().cyan(),
-                        "SOL Balance".bold().red(), current_sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
-                        "ORE Stake".bold().yellow(), amount_u64_to_string(proof.balance),
-                        if last_hash_at > 0 {
-                            format!(
-                                "{}{}: {} ORE\n",
-                                " ".repeat(4), "Change".bold().green(),
-                                amount_u64_to_string(proof.balance.saturating_sub(last_balance))
-                            )
-                        } else {
-                            "".to_string()
-                        },
-                        "Multiplier".bold().magenta(), calculate_multiplier(proof.balance, config.top_balance)
+                        "**{}**\n\n**SOL Balance**: {:.9} SOL\n**ORE Stake**: {} ORE\n**Change**: {} ORE\n**Multiplier**: {:12}x\n**Best Hash**: {}\n**Difficulty**: {}\n**Hash Rate**: {:.2} H/s",
+                        "-".repeat(40),
+                        current_sol_balance as f64 / 1_000_000_000.0,
+                        amount_u64_to_string(proof.balance),
+                        amount_u64_to_string(proof.balance.saturating_sub(last_balance)),
+                        calculate_multiplier(proof.balance, config.top_balance),
+                        best_hash_encoded,
+                        best_difficulty,
+                        hash_rate
                     ),
                 });
     
