@@ -35,30 +35,31 @@ impl Miner {
     pub async fn mine(&self, args: MineArgs) {
         let signer = self.signer();
         self.open().await;
-
+    
         self.check_num_cores(args.cores);
-
+    
         let mut last_hash_at = 0;
         let mut last_balance = 0;
         let http_client = Client::new();
-        
+    
         loop {
+            // Fetch configuration and proof
             let rpc_client_clone = Arc::clone(&self.rpc_client);
             let config = tokio::spawn(async move { get_config(&rpc_client_clone).await }).await.unwrap();
-            let proof = get_updated_proof_with_authority(&self.rpc_client, signer.pubkey(), last_hash_at).await;
-
+            let proof = get_updated_proof_with_authority(&self.rpc_client, signer.pubkey(), last_hash_at).await.unwrap();
+    
             // Fetch the current Sol balance and prices
             let current_sol_balance = self.rpc_client.get_balance(&signer.pubkey()).await.unwrap_or(0);
             let sol_price_usd = get_solana_price_usd().await.unwrap_or(0.0);
             let ore_price_usd = get_ore_price_usd().await.unwrap_or(0.0);
-
+    
             // Calculate ORE balance and its value
-            let ore_balance = proof.balance as f64 / 1_000_000_000_000.0; // Use the correct divisor
+            let ore_balance = proof.balance as f64 / 100_000_000_000.0;
             let ore_value_usd = ore_balance * ore_price_usd;
-            
+    
             // Create the output message
             let output_message = format!(
-                "{}\n\n{}: {:.9} SOL (approx. ${:.2})\n{}: {} ORE (approx. ${:.2})\n{}  {}: {:12}x",
+                "{}\n\n{}: {:.9} SOL (approx. ${:.2}) 💸\n{}: {} ORE (approx. ${:.2}) 💰\n{}  {}: {:12}x",
                 "-".repeat(40).bold().cyan(),
                 "SOL Balance".bold().red(),
                 current_sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
@@ -78,41 +79,41 @@ impl Miner {
                 "Multiplier".bold().magenta(),
                 calculate_multiplier(proof.balance, config.top_balance)
             );
-            
+    
             // Print the formatted output
             println!("{}", output_message);
-
+    
             last_hash_at = proof.last_hash_at;
             last_balance = proof.balance;
-
+    
             let cutoff_time = self.get_cutoff(proof, args.buffer_time).await;
-
+    
             let solution = Self::find_hash_par(proof, cutoff_time, args.cores, config.min_difficulty as u32).await;
-
+    
             let mut ixs = vec![ore_api::instruction::auth(proof_pubkey(signer.pubkey()))];
             let mut compute_budget = 500_000;
             if self.should_reset(config).await && rand::thread_rng().gen_range(0..100) == 0 {
                 compute_budget += 100_000;
                 ixs.push(ore_api::instruction::reset(signer.pubkey()));
             }
-
+    
             ixs.push(ore_api::instruction::mine(
                 signer.pubkey(),
                 signer.pubkey(),
                 self.find_bus().await,
                 solution,
             ));
-
+    
             // Send message to Discord webhook
             if let Some(discord_webhook_url) = &self.discord_webhook {
                 let timestamp = Utc::now().to_rfc3339(); // Get the current timestamp in ISO 8601 format
                 let date_time = format_date_time(); // Get formatted date and time
-
+    
                 let pickaxe_line = "⛏️".repeat(10); // Adjust the number as needed
-                
+    
                 let payload = json!({
                     "content": format!(
-                        "**{}**\n\n({})\n\n**SOL Balance 🌟**: {:.9} SOL (approx. ${:.2}) 💸\n**ORE Stake 💰**: {:.11} ORE (approx. ${:.2}) 💸\n**Change 🔄**: {}\n**Multiplier 📈**: {:12}x",
+                        "**{}**\n\n({})\n\n**SOL Balance 🌟**: {:.9} SOL (approx. ${:.2}) 💸\n**ORE Stake 💰**: {:.11} ORE (approx. ${:.2}) 💸\n**Multiplier 📈**: {:12}x",
                         pickaxe_line, // Use pickaxe emojis for the line
                         date_time, // Insert the formatted date and time here
                         current_sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
@@ -123,7 +124,7 @@ impl Miner {
                     ),
                     "timestamp": timestamp // Ensure this is included
                 });
-
+    
                 if let Err(e) = http_client.post(discord_webhook_url)
                     .json(&payload)
                     .send()
@@ -134,10 +135,26 @@ impl Miner {
             } else {
                 eprintln!("Discord webhook URL is not set");
             }
-
-            self.send_and_confirm(&ixs, ComputeBudget::Fixed(compute_budget), false)
-                .await
-                .ok();
+    
+            // Attempt to send and confirm transaction
+            let result = self.send_and_confirm(
+                &ixs,
+                ComputeBudget::Fixed(compute_budget),
+                false,
+            ).await;
+    
+            match result {
+                Ok(signature) => {
+                    println!("Transaction confirmed: {}", signature);
+                }
+                Err(e) => {
+                    println!("Transaction failed: {:?}", e);
+                    // Continue mining after error
+                }
+            }
+    
+            // Add delay between mining cycles if needed
+            tokio::time::sleep(Duration::from_secs(10)).await;
         }
     }
 

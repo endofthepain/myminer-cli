@@ -1,5 +1,4 @@
 use std::{str::FromStr, time::Duration};
-
 use chrono::Local;
 use colored::*;
 use indicatif::ProgressBar;
@@ -23,17 +22,14 @@ use solana_sdk::{
     transaction::Transaction,
 };
 use solana_transaction_status::{TransactionConfirmationStatus, UiTransactionEncoding};
-
 use crate::utils::get_latest_blockhash_with_retries;
 use crate::Miner;
 
 const MIN_SOL_BALANCE: f64 = 0.001;
-
 const RPC_RETRIES: usize = 0;
 const _SIMULATION_RETRIES: usize = 4;
 const GATEWAY_RETRIES: usize = 150;
 const CONFIRM_RETRIES: usize = 8;
-
 const CONFIRM_DELAY: u64 = 10;
 const GATEWAY_DELAY: u64 = 300;
 
@@ -121,7 +117,7 @@ impl Miner {
         // Submit tx
         let mut attempts = 0;
         loop {
-            progress_bar.set_message(format!("Submitting transaction... (attempt {})", attempts,));
+            progress_bar.set_message(format!("Submitting transaction... (attempt {})", attempts));
 
             // Sign tx with a new blockhash (after approximately ~45 sec)
             if attempts % 10 == 0 {
@@ -267,6 +263,7 @@ impl Miner {
             tokio::time::sleep(Duration::from_millis(GATEWAY_DELAY)).await;
             if attempts > GATEWAY_RETRIES {
                 log_error(&progress_bar, "Max retries", true);
+                // Return the error but don't terminate the app
                 return Err(ClientError {
                     request: None,
                     kind: ClientErrorKind::Custom("Max retries".into()),
