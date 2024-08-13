@@ -18,8 +18,6 @@ use solana_rpc_client::spinner;
 use solana_sdk::signer::Signer;
 use reqwest::Client;
 use serde_json::json;
-use chrono::Utc;
-use chrono::format::strftime;
 
 use crate::{
     args::MineArgs,
