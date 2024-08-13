@@ -46,6 +46,8 @@ tokio = "1.35.1"
 url = "2.5"
 tokio-tungstenite = "0.16"
 serde = { version = "1.0", features = ["derive"] }
+coal-api = { git = "https://github.com/Findiglay/coal.git" }
+coal-utils = { git = "https://github.com/Findiglay/coal.git" }
 
 [profile.release]
 opt-level = 3   # Optimize for binary size. You can use "3" for full optimizations if binary size isn't an issue.
@@ -62,7 +64,5 @@ rustflags = ["-C", "target-cpu=native"]
 
 # [patch.crates-io]
 # drillx = { path = "../drillx/drillx" }
-coal-api = { git = "https://github.com/Findiglay/coal.git" }
-coal-utils = { git = "https://github.com/Findiglay/coal.git" }
 # ore-api = { path = "../ore/api" }
 # ore-utils = { path = "../ore/utils" }
