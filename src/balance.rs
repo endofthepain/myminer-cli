@@ -1,5 +1,4 @@
 use std::str::FromStr;
-use coal_api::consts;
 
 use solana_program::pubkey::Pubkey;
 use solana_sdk::signature::Signer;
@@ -26,7 +25,7 @@ impl Miner {
         let proof = get_proof_with_authority(&self.rpc_client, address).await;
         let token_account_address = spl_associated_token_account::get_associated_token_address(
             &address,
-            &coal::consts::MINT_ADDRESS,
+            &coal_api::consts::MINT_ADDRESS,
         );
         let token_balance = if let Ok(Some(token_account)) = self
             .rpc_client
