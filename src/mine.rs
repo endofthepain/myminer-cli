@@ -58,12 +58,13 @@ impl Miner {
             
             // Create the output message
             let output_message = format!(
+                "{}\n\n{}: {:.9} SOL (approx. ${:.2})\n{}: {} ORE (approx. ${:.2})\n{}  {}: {:12}x",
                 "-".repeat(40).bold().cyan(),
                 "SOL Balance".bold().red(),
                 current_sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
                 (current_sol_balance as f64 / 1_000_000_000.0) * sol_price_usd,
                 "ORE Stake".bold().yellow(),
-                ore_balance, // Ensure this shows 11 decimal places
+                ore_balance, // Updated to show 11 decimal places
                 ore_value_usd,
                 if last_hash_at > 0 {
                     format!(
