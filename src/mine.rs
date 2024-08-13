@@ -24,12 +24,16 @@ use crate::{
     args::MineArgs,
     send_and_confirm::ComputeBudget,
     utils::{
-        amount_u64_to_string, get_clock, get_config, get_updated_proof_with_authority, proof_pubkey,
+        get_clock, get_config, get_updated_proof_with_authority, proof_pubkey,
     },
     Miner,
 };
 
 use crate::price_fetcher::{get_solana_price_usd, get_ore_price_usd};
+
+fn format_amount_u64(amount: u64) -> String {
+    format!("{:0>10}", amount)
+}
 
 impl Miner {
     pub async fn mine(&self, args: MineArgs) {
@@ -60,13 +64,13 @@ impl Miner {
                 current_sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
                 (current_sol_balance as f64 / 1_000_000_000.0) * sol_price_usd,
                 "ORE Stake".bold().yellow(), 
-                amount_u64_to_string(proof.balance),
+                format_amount_u64(proof.balance),
                 (proof.balance as f64) * ore_price_usd,
                 if last_hash_at > 0 {
                     format!(
                         "{}{}: {} ORE\n",
                         " ".repeat(4), "Change".bold().green(),
-                        amount_u64_to_string(proof.balance.saturating_sub(last_balance))
+                        format_amount_u64(proof.balance.saturating_sub(last_balance))
                     )
                 } else {
                     "".to_string()
@@ -105,23 +109,23 @@ impl Miner {
                 // Calculate the change in balance
                 let change_in_balance = proof.balance.saturating_sub(last_balance);
                 let formatted_change = if change_in_balance > 0 {
-                    amount_u64_to_string(change_in_balance)
+                    format_amount_u64(change_in_balance)
                 } else {
                     "No Change".to_string()
                 };
             
                 let payload = json!({
                     "content": format!(
-                        "**{}**\n\n**SOL Balance 🌟**: {:.9} SOL (approx. ${:.2}) 💸\n**ORE Stake 💰**: {} ORE (approx. ${:.2})\n**Change 🔄**: {} ORE\n**Multiplier 📈**: {:12}x",
+                        "**{}**\n\n**SOL Balance 🌟**: {:.9} SOL (approx. ${:.2}) 💸\n**ORE Stake 💰**: {} ORE (approx. ${:.2})\n**Change 🔄**: {}\n**Multiplier 📈**: {:12}x",
                         "-".repeat(40),
                         current_sol_balance as f64 / 1_000_000_000.0,
                         (current_sol_balance as f64 / 1_000_000_000.0) * sol_price_usd,
-                        amount_u64_to_string(proof.balance),
+                        format_amount_u64(proof.balance),
                         (proof.balance as f64) * ore_price_usd,
                         formatted_change,
                         calculate_multiplier(proof.balance, config.top_balance)
                     ),
-                    "timestamp": timestamp // Add the timestamp field
+                    "timestamp": timestamp
                 });
             
                 if let Err(e) = http_client.post(discord_webhook_url)
