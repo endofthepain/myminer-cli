@@ -1,6 +1,6 @@
 use crate::Miner;
 
-use ore_api::consts::BUS_ADDRESSES;
+use coal_api::consts::BUS_ADDRESSES;
 use reqwest::Client;
 use serde_json::{json, Value};
 
@@ -46,7 +46,7 @@ impl Miner {
 
         // Build fee estimate request
         let client = Client::new();
-        let ore_addresses: Vec<String> = std::iter::once(ore_api::ID.to_string())
+        let ore_addresses: Vec<String> = std::iter::once(coal_api::ID.to_string())
             .chain(BUS_ADDRESSES.iter().map(|pubkey| pubkey.to_string()))
             .collect();
         let body = match strategy {
@@ -74,7 +74,7 @@ impl Miner {
                 "id": "1",
                 "method": "qn_estimatePriorityFees",
                 "params": {
-                    "account": "oreV2ZymfyeXgNgBdqMkumTqqAprVqgBWQfoYkrtKWQ",
+                    "account": "",
                     "last_n_blocks": 100
                 }
             })),

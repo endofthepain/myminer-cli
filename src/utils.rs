@@ -1,13 +1,13 @@
 use std::{io::Read, time::Duration};
 
 use cached::proc_macro::cached;
-use ore_api::{
+use coal_api::{
     consts::{
         CONFIG_ADDRESS, MINT_ADDRESS, PROOF, TOKEN_DECIMALS, TOKEN_DECIMALS_V1, TREASURY_ADDRESS,
     },
     state::{Config, Proof, Treasury},
 };
-use ore_utils::AccountDeserialize;
+use coal_utils::AccountDeserialize;
 use serde::Deserialize;
 use solana_client::client_error::{ClientError, ClientErrorKind};
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -133,7 +133,7 @@ pub fn format_date_time() -> String {
 
 #[cached]
 pub fn proof_pubkey(authority: Pubkey) -> Pubkey {
-    Pubkey::find_program_address(&[PROOF, authority.as_ref()], &ore_api::ID).0
+    Pubkey::find_program_address(&[PROOF, authority.as_ref()], &coal_api::ID).0
 }
 
 #[cached]

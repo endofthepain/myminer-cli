@@ -8,11 +8,11 @@ use drillx::{
     equix::{self},
     Hash, Solution,
 };
-use ore_api::{
+use coal_api::{
     consts::{BUS_ADDRESSES, BUS_COUNT, EPOCH_DURATION},
     state::{Bus, Config, Proof},
 };
-use ore_utils::AccountDeserialize;
+use coal_utils::AccountDeserialize;
 use rand::Rng;
 use solana_program::pubkey::Pubkey;
 use solana_rpc_client::spinner;
@@ -60,19 +60,19 @@ impl Miner {
     
             // Create the output message
             let output_message = format!(
-                "{}\n\n{}: {:.9} SOL (approx. ${:.2}) 💸\n{}: {} ORE (approx. ${:.2}) 💰\n{}  {}: {:12}x",
+                "{}\n\n{}: {:.9} SOL (approx. ${:.2}) 💸\n{}: {} COAL (approx. ${:.2}) 💰\n{}  {}: {:12}x",
                 "-".repeat(40).bold().cyan(),
                 "SOL Balance".bold().red(),
                 current_sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
                 (current_sol_balance as f64 / 1_000_000_000.0) * sol_price_usd,
-                "ORE Stake".bold().yellow(),
+                "COAL Stake".bold().yellow(),
                 ore_balance, // Updated to show 11 decimal places
                 ore_value_usd,
                 if last_hash_at > 0 {
                     format!(
-                        "{}{}: {:.11} ORE\n",
+                        "{}{}: {:.11} COAL\n",
                         " ".repeat(4), "Change".bold().green(),
-                        (proof.balance.saturating_sub(last_balance) as f64 / 100_000_000.0)
+                        proof.balance.saturating_sub(last_balance)
                     )
                 } else {
                     "No Change".to_string()
@@ -91,14 +91,14 @@ impl Miner {
     
             let solution = Self::find_hash_par(proof, cutoff_time, args.cores, config.min_difficulty as u32).await;
     
-            let mut ixs = vec![ore_api::instruction::auth(proof_pubkey(signer.pubkey()))];
+            let mut ixs = vec![coal_api::instruction::auth(proof_pubkey(signer.pubkey()))];
             let mut compute_budget = 500_000;
             if self.should_reset(config).await && rand::thread_rng().gen_range(0..100) == 0 {
                 compute_budget += 100_000;
-                ixs.push(ore_api::instruction::reset(signer.pubkey()));
+                ixs.push(coal_api::instruction::reset(signer.pubkey()));
             }
     
-            ixs.push(ore_api::instruction::mine(
+            ixs.push(coal_api::instruction::mine(
                 signer.pubkey(),
                 signer.pubkey(),
                 self.find_bus().await,
@@ -114,7 +114,7 @@ impl Miner {
     
                 let payload = json!({
                     "content": format!(
-                        "**{}**\n\n({})\n\n**SOL Balance 🌟**: {:.9} SOL (approx. ${:.2}) 💸\n**ORE Stake 💰**: {:.11} ORE (approx. ${:.2}) 💸\n**Multiplier 📈**: {:12}x",
+                        "**{}**\n\n({})\n\n**SOL Balance 🌟**: {:.9} SOL (approx. ${:.2}) 💸\n**COAL Stake 💰**: {:.11} ORE (approx. ${:.2}) 💸\n**Multiplier 📈**: {:12}x",
                         pickaxe_line, // Use pickaxe emojis for the line
                         date_time, // Insert the formatted date and time here
                         current_sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
