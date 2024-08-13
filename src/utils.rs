@@ -128,7 +128,7 @@ pub async fn get_latest_blockhash_with_retries(
     }
 }
 
-fn format_date_time() -> String {
+pub fn format_date_time() -> String {
     Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
