@@ -2466,7 +2466,7 @@ dependencies = [
 
 [[package]]
 name = "myore"
-version = "1.2.9"
+version = "1.2.10"
 dependencies = [
  "bincode",
  "bs58 0.5.1",

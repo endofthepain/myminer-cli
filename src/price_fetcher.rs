@@ -26,8 +26,13 @@ pub async fn get_ore_price_usd() -> Result<f64, Box<dyn Error>> {
         .await?
         .json::<Value>()
         .await?;
-
-    // Extract the price in USD from the JSON response
-    let ore_price_usd = response["pair"]["priceUsd"].as_f64().unwrap_or(0.0);
-    Ok(ore_price_usd)
+    
+    // Extract priceUsd from the pair object
+    let price_usd = response["pair"]["priceUsd"]
+        .as_str()
+        .unwrap_or("0")
+        .parse::<f64>()
+        .unwrap_or(0.0);
+    
+    Ok(price_usd)
 }
