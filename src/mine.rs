@@ -72,7 +72,7 @@ impl Miner {
                     format!(
                         "{}{}: {:.11} ORE\n",
                         " ".repeat(4), "Change".bold().green(),
-                        (proof.balance.saturating_sub(last_balance) as f64 / 100_000_000.0)
+                        (proof.balance.saturating_sub(last_balance) as f64 / 100_000_000_000.0)
                     )
                 } else {
                     "No Change".to_string()
