@@ -1,6 +1,7 @@
 use std::{sync::Arc, sync::atomic::{AtomicU64, AtomicU32, Ordering}, time::Instant};
 use std::thread;
 use std::sync::mpsc::channel;
+use std::time::Duration;
 
 use colored::*;
 use drillx::{
@@ -46,7 +47,7 @@ impl Miner {
             // Fetch configuration and proof
             let rpc_client_clone = Arc::clone(&self.rpc_client);
             let config = tokio::spawn(async move { get_config(&rpc_client_clone).await }).await.unwrap();
-            let proof = get_updated_proof_with_authority(&self.rpc_client, signer.pubkey(), last_hash_at).await.unwrap();
+            let proof = get_updated_proof_with_authority(&self.rpc_client, signer.pubkey(), last_hash_at).await;
     
             // Fetch the current Sol balance and prices
             let current_sol_balance = self.rpc_client.get_balance(&signer.pubkey()).await.unwrap_or(0);
