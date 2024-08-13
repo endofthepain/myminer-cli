@@ -72,8 +72,7 @@ impl Miner {
                     format!(
                         "{}{}: {:.11} COAL\n",
                         " ".repeat(4), "Change".bold().green(),
-                        proof.balance.saturating_sub(last_balance)
-                    )
+                        (proof.balance.saturating_sub(last_balance) as f64 / 1_000_000_000.0)                    )
                 } else {
                     "No Change".to_string()
                 },
