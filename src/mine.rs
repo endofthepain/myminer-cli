@@ -53,9 +53,9 @@ impl Miner {
             let ore_price_usd = get_ore_price_usd().await.unwrap_or(0.0);
 
             // Calculate ORE balance and its value
-            let ore_balance = proof.balance as f64 / 1_000_000_000_000.0;
+            let ore_balance = proof.balance as f64 / 1_000_000_000.0; // Update divisor
             let ore_value_usd = ore_balance * ore_price_usd;
-
+            
             // Create the output message
             let output_message = format!(
                 "{}\n\n{}: {:.9} SOL (approx. ${:.2})\n{}: {} ORE (approx. ${:.2})\n{}  {}: {:12}x",
@@ -126,7 +126,7 @@ impl Miner {
                         formatted_change,
                         calculate_multiplier(proof.balance, config.top_balance)
                     ),
-                    "timestamp": timestamp
+                    "timestamp": timestamp // Ensure this is included
                 });
 
                 if let Err(e) = http_client.post(discord_webhook_url)
