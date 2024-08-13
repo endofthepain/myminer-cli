@@ -56,26 +56,31 @@ impl Miner {
             let sol_price_usd = get_solana_price_usd().await.unwrap_or(0.0);
             let ore_price_usd = get_ore_price_usd().await.unwrap_or(0.0);
 
+            // Convert the ORE balance to a human-readable format
+            let ore_balance = proof.balance as f64 / 1_000_000_000.0;
+            let ore_value_usd = ore_balance * ore_price_usd;
+
             // Create the output message
             let output_message = format!(
-                "{}\n\n{}: {:.9} SOL (approx. ${:.2})\n{}: {} ORE (approx. ${:.2})\n{}  {}: {:12}x",
+                "{}\n\n{}: {:.9} SOL (approx. ${:.2})\n{}: {:.9} ORE (approx. ${:.2})\n{}  {}: {}",
                 "-".repeat(40).bold().cyan(),
-                "SOL Balance".bold().red(), 
+                "SOL Balance".bold().red(),
                 current_sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
                 (current_sol_balance as f64 / 1_000_000_000.0) * sol_price_usd,
-                "ORE Stake".bold().yellow(), 
-                format_amount_u64(proof.balance),
-                (proof.balance as f64) * ore_price_usd,
+                "ORE Stake".bold().yellow(),
+                ore_balance,
+                ore_value_usd,
                 if last_hash_at > 0 {
                     format!(
-                        "{}{}: {} ORE\n",
+                        "{}{}: {:.9} ORE\n",
                         " ".repeat(4), "Change".bold().green(),
-                        format_amount_u64(proof.balance.saturating_sub(last_balance))
+                        (proof.balance.saturating_sub(last_balance) as f64 / 1_000_000_000.0)
                     )
                 } else {
                     "".to_string()
                 },
-                "Multiplier".bold().magenta(), calculate_multiplier(proof.balance, config.top_balance)
+                "Multiplier".bold().magenta(),
+                calculate_multiplier(proof.balance, config.top_balance)
             );
 
             // Print the formatted output
@@ -116,12 +121,12 @@ impl Miner {
             
                 let payload = json!({
                     "content": format!(
-                        "**{}**\n\n**SOL Balance 🌟**: {:.9} SOL (approx. ${:.2}) 💸\n**ORE Stake 💰**: {} ORE (approx. ${:.2})\n**Change 🔄**: {}\n**Multiplier 📈**: {:12}x",
+                        "**{}**\n\n**SOL Balance 🌟**: {:.9} SOL (approx. ${:.2}) 💸\n**ORE Stake 💰**: {:.9} ORE (approx. ${:.2})\n**Change 🔄**: {}\n**Multiplier 📈**: {:12}x",
                         "-".repeat(40),
                         current_sol_balance as f64 / 1_000_000_000.0,
                         (current_sol_balance as f64 / 1_000_000_000.0) * sol_price_usd,
-                        format_amount_u64(proof.balance),
-                        (proof.balance as f64) * ore_price_usd,
+                        ore_balance,
+                        ore_value_usd,
                         formatted_change,
                         calculate_multiplier(proof.balance, config.top_balance)
                     ),
@@ -230,37 +235,26 @@ impl Miner {
                     nonce += 1;
                 }
     
-                tx.send((best_nonce, best_difficulty, best_hash)).unwrap();
+                tx.send((best_nonce, best_hash)).unwrap();
             });
         }
     
         let mut best_nonce = 0;
-        let mut best_difficulty = 0;
         let mut best_hash = Hash::default();
+        let mut best_difficulty = 0;
     
         for _ in 0..num_threads {
-            let (nonce, difficulty, hash) = rx.recv().unwrap();
-            if difficulty > best_difficulty {
-                best_difficulty = difficulty;
+            let (nonce, hash) = rx.recv().unwrap();
+            let difficulty = hash.difficulty();
+            if difficulty.gt(&best_difficulty) {
                 best_nonce = nonce;
                 best_hash = hash;
+                best_difficulty = difficulty;
             }
         }
     
-        let total_hashes = global_total_hashes.load(Ordering::Relaxed);
-        let elapsed_time = start_time.elapsed().as_secs_f64();
-        let hash_rate = total_hashes as f64 / elapsed_time;
-    
-        progress_bar.finish_with_message(format!(
-            "Best Hash: {} (difficulty {}, {:.2} H/s)",
-            bs58::encode(best_hash.h).into_string(),
-            best_difficulty,
-            hash_rate,
-        ));
-    
-        Solution::new(best_hash.d, best_nonce.to_le_bytes())
-    }        
-    
+        Solution::new(best_nonce, best_hash)
+    }
     pub fn check_num_cores(&self, cores: u64) {
         let num_cores = num_cpus::get() as u64;
         if cores.gt(&num_cores) {
@@ -314,11 +308,17 @@ impl Miner {
 }
 
 fn calculate_multiplier(balance: u64, top_balance: u64) -> f64 {
-    1.0 + (balance as f64 / top_balance as f64).min(1.0f64)
+    // This function calculates the multiplier based on the provided balance and top balance.
+    // You can adjust the logic here as per your requirements.
+    if top_balance == 0 {
+        return 1.0;
+    }
+    balance as f64 / top_balance as f64
 }
 
 fn format_duration(seconds: u32) -> String {
+    // This function formats the duration in seconds to a human-readable string.
     let minutes = seconds / 60;
-    let remaining_seconds = seconds % 60;
-    format!("{:02}:{:02}", minutes, remaining_seconds)
+    let seconds = seconds % 60;
+    format!("{:02}:{:02}", minutes, seconds)
 }
