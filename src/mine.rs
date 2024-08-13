@@ -53,18 +53,17 @@ impl Miner {
             let ore_price_usd = get_ore_price_usd().await.unwrap_or(0.0);
 
             // Calculate ORE balance and its value
-            let ore_balance = proof.balance as f64 / 1_000_000_000.0; // Update divisor
+            let ore_balance = proof.balance as f64 / 1_000_000_000_000.0; // Use the correct divisor
             let ore_value_usd = ore_balance * ore_price_usd;
             
             // Create the output message
             let output_message = format!(
-                "{}\n\n{}: {:.9} SOL (approx. ${:.2})\n{}: {} ORE (approx. ${:.2})\n{}  {}: {:12}x",
                 "-".repeat(40).bold().cyan(),
                 "SOL Balance".bold().red(),
                 current_sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
                 (current_sol_balance as f64 / 1_000_000_000.0) * sol_price_usd,
                 "ORE Stake".bold().yellow(),
-                ore_balance, // Updated to show 11 decimal places
+                ore_balance, // Ensure this shows 11 decimal places
                 ore_value_usd,
                 if last_hash_at > 0 {
                     format!(
