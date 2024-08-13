@@ -3,7 +3,7 @@ use serde_json::Value;
 use std::error::Error;
 
 const COINGECKO_API_URL: &str = "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd";
-const DEXSCREENER_API_URL: &str = "https://api.dexscreener.com/latest/dex/pairs/solana/ggadtfbqdgjozz3fp7zrtofgwnrs4e6mczmmd5ni1mxj";
+const DEXSCREENER_API_URL: &str = "https://api.dexscreener.com/latest/dex/pairs/solana/ar5on1fhzvw212puss8gtzftovbjsfe9cutrd3suxrhx";
 
 pub async fn get_solana_price_usd() -> Result<f64, Box<dyn Error>> {
     let client = Client::new();
