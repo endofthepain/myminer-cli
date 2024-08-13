@@ -161,27 +161,27 @@ impl Miner {
         let global_best_difficulty = Arc::new(AtomicU32::new(0));
         let global_total_hashes = Arc::new(AtomicU64::new(0));
         progress_bar.set_message("Mining...");
-        
+    
         let start_time = Instant::now();
-        
+    
         // Use available cores or the provided value, whichever is smaller
         let num_threads = std::cmp::min(cores, num_cpus::get() as u64);
-        
+    
         for i in 0..num_threads {
             let tx = tx.clone();
             let global_best_difficulty = Arc::clone(&global_best_difficulty);
             let global_total_hashes = Arc::clone(&global_total_hashes);
             let proof = proof.clone();
             let progress_bar = progress_bar.clone();
-        
+    
             thread::spawn(move || {
                 let mut memory = equix::SolverMemory::new();
                 let timer = Instant::now();
                 let mut nonce = u64::MAX.saturating_div(num_threads).saturating_mul(i);
                 let mut best_nonce = nonce;
                 let mut best_difficulty = 0;
-                let mut best_hash = Hash::default();
-                
+                let mut best_hash = [0u8; 32]; // Assuming Hash is 32 bytes
+    
                 loop {
                     if let Ok(hx) = drillx::hash_with_memory(
                         &mut memory,
@@ -192,7 +192,7 @@ impl Miner {
                         if difficulty.gt(&best_difficulty) {
                             best_nonce = nonce;
                             best_difficulty = difficulty;
-                            best_hash = hx;
+                            best_hash.copy_from_slice(&hx.to_bytes()); // Assuming `to_bytes` returns a 32-byte array
     
                             let prev_best_difficulty = global_best_difficulty.fetch_max(best_difficulty, Ordering::Relaxed);
                             
@@ -201,15 +201,15 @@ impl Miner {
                             }
                         }
                     }
-        
+    
                     global_total_hashes.fetch_add(1, Ordering::Relaxed);
-        
+    
                     if nonce % 100 == 0 {
                         let global_best_difficulty = global_best_difficulty.load(Ordering::Relaxed);
                         let total_hashes = global_total_hashes.load(Ordering::Relaxed);
                         let elapsed_time = start_time.elapsed().as_secs_f64();
                         let hash_rate = total_hashes as f64 / elapsed_time;
-        
+    
                         if timer.elapsed().as_secs() >= cutoff_time {
                             if i == 0 {
                                 progress_bar.set_message(format!(
@@ -231,34 +231,31 @@ impl Miner {
                             ));
                         }
                     }
-        
+    
                     nonce += 1;
                 }
     
-                let digest = best_hash.h; // Extract the digest (16 bytes)
-                let nonce_bytes = best_nonce.to_le_bytes(); // Convert nonce to 8 bytes
-    
-                tx.send((digest, nonce_bytes)).unwrap();
+                tx.send((best_hash, best_nonce.to_le_bytes())).unwrap();
             });
         }
-        
-        let mut best_digest = [0u8; 16];
+    
+        let mut best_hash = [0u8; 32];
         let mut best_nonce = [0u8; 8];
         let mut best_difficulty = 0;
-        
+    
         for _ in 0..num_threads {
-            let (digest, nonce) = rx.recv().unwrap();
-            let difficulty = Hash::from(digest).difficulty(); // Create Hash to get difficulty
+            let (hash, nonce) = rx.recv().unwrap();
+            let difficulty = Hash::from_bytes(&hash).difficulty(); // Assuming from_bytes method
             if difficulty.gt(&best_difficulty) {
-                best_digest = digest;
+                best_hash = hash;
                 best_nonce = nonce;
                 best_difficulty = difficulty;
             }
         }
-        
-        Solution::new(best_digest, best_nonce)
-    }
     
+        Solution::new(best_hash, best_nonce)
+    }
+
     pub fn check_num_cores(&self, cores: u64) {
         let num_cores = num_cpus::get() as u64;
         if cores.gt(&num_cores) {
