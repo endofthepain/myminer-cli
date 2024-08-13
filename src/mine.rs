@@ -28,8 +28,7 @@ use crate::{
     Miner,
 };
 
-use crate::price_fetcher::get_solana_price_usd;
-use crate::price_fetcher::get_ore_price_usd;
+use crate::price_fetcher::{get_solana_price_usd, get_ore_price_usd};
 
 impl Miner {
     pub async fn mine(&self, args: MineArgs) {
@@ -40,6 +39,8 @@ impl Miner {
 
         let mut last_hash_at = 0;
         let mut last_balance = 0;
+        let http_client = Client::new();
+
         loop {
             let rpc_client_clone = Arc::clone(&self.rpc_client);
             let config = tokio::spawn(async move { get_config(&rpc_client_clone).await }).await.unwrap();
@@ -56,10 +57,10 @@ impl Miner {
                 "-".repeat(40).bold().cyan(),
                 "SOL Balance".bold().red(), 
                 current_sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
-                current_sol_balance as f64 / 1_000_000_000.0 * sol_price_usd,
+                (current_sol_balance as f64 / 1_000_000_000.0) * sol_price_usd,
                 "ORE Stake".bold().yellow(), 
                 amount_u64_to_string(proof.balance),
-                proof.balance as f64 * ore_price_usd,
+                (proof.balance as f64) * ore_price_usd,
                 if last_hash_at > 0 {
                     format!(
                         "{}{}: {} ORE\n",
@@ -96,25 +97,31 @@ impl Miner {
                 solution,
             ));
 
-            let http_client = Client::new();
+            // Send message to Discord webhook
+            if let Some(discord_webhook_url) = &self.discord_webhook {
+                let payload = json!({
+                    "content": format!(
+                        "**{}**\n\n**SOL Balance 🌟**: {:.9} SOL (approx. ${:.2}) 💸\n**ORE Stake 💰**: {} ORE (approx. ${:.2})\n**Change 🔄**: {} ORE\n**Multiplier 📈**: {:12}x",
+                        "-".repeat(40),
+                        current_sol_balance as f64 / 1_000_000_000.0,
+                        (current_sol_balance as f64 / 1_000_000_000.0) * sol_price_usd,
+                        amount_u64_to_string(proof.balance),
+                        (proof.balance as f64) * ore_price_usd,
+                        amount_u64_to_string(proof.balance.saturating_sub(last_balance)),
+                        calculate_multiplier(proof.balance, config.top_balance)
+                    ),
+                });
 
-            let payload = json!({
-                "content": format!(
-                    "**{}**\n\n**SOL Balance 🌟**: {:.9} SOL (approx. ${:.2}) 💸\n**ORE Stake 💰**: {} ORE (approx. ${:.2})\n**Change 🔄**: {} ORE\n**Multiplier 📈**: {:12}x",
-                    "-".repeat(40),
-                    current_sol_balance as f64 / 1_000_000_000.0 * sol_price_usd,
-                    amount_u64_to_string(proof.balance) * ore_price_usd,
-                    amount_u64_to_string(proof.balance.saturating_sub(last_balance)),
-                    calculate_multiplier(proof.balance, config.top_balance)
-                ),
-            });
-
-            let discord_webhook_url = self.discord_webhook.as_deref().expect("Discord webhook URL must be set");
-
-            let _ = http_client.post(discord_webhook_url)
-                .json(&payload)
-                .send()
-                .await;  
+                if let Err(e) = http_client.post(discord_webhook_url)
+                    .json(&payload)
+                    .send()
+                    .await
+                {
+                    eprintln!("Failed to send Discord webhook: {}", e);
+                }
+            } else {
+                eprintln!("Discord webhook URL is not set");
+            }
 
             self.send_and_confirm(&ixs, ComputeBudget::Fixed(compute_budget), false)
                 .await
@@ -242,7 +249,7 @@ impl Miner {
         let num_cores = num_cpus::get() as u64;
         if cores.gt(&num_cores) {
             println!(
-                "{} Cannot exceeds available cores ({})",
+                "{} Cannot exceed available cores ({})",
                 "WARNING".bold().yellow(),
                 num_cores
             );
