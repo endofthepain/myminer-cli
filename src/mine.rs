@@ -155,7 +155,7 @@ impl Miner {
             }
     
             // Add delay between mining cycles if needed
-            tokio::time::sleep(Duration::from_secs(10)).await;
+            tokio::time::sleep(Duration::from_secs(0)).await;
         }
     }
 
