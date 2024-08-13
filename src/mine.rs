@@ -70,7 +70,7 @@ impl Miner {
                     format!(
                         "{}{}: {:.11} ORE\n",
                         " ".repeat(4), "Change".bold().green(),
-                        (proof.balance.saturating_sub(last_balance) as f64 / 1_000_000_000_000.0) // Format change with 11 decimal places
+                        (proof.balance.saturating_sub(last_balance) as f64 / 1_000_000_000.0) // Corrected divisor
                     )
                 } else {
                     "No Change".to_string()
@@ -108,15 +108,7 @@ impl Miner {
                 let timestamp = Utc::now().to_rfc3339(); // Get the current timestamp in ISO 8601 format
                 let date_time = format_date_time(); // Get formatted date and time
 
-                let pickaxe_line = "⛏️".repeat(40); // Adjust the number as needed
-
-                // Calculate the change in balance
-                let change_in_balance = proof.balance.saturating_sub(last_balance);
-                let formatted_change = if change_in_balance > 0 {
-                    format!("{:.11}", change_in_balance as f64 / 1_000_000_000_000.0) // Format change with 11 decimal places
-                } else {
-                    "No Change".to_string()
-                };
+                let pickaxe_line = "⛏️".repeat(10); // Adjust the number as needed
                 
                 let payload = json!({
                     "content": format!(
@@ -127,7 +119,6 @@ impl Miner {
                         (current_sol_balance as f64 / 1_000_000_000.0) * sol_price_usd,
                         ore_balance, // Ensure this shows 11 decimal places
                         ore_value_usd,
-                        formatted_change, // Ensure this is correctly formatted
                         calculate_multiplier(proof.balance, config.top_balance)
                     ),
                     "timestamp": timestamp // Ensure this is included
