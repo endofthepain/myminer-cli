@@ -199,34 +199,22 @@ async fn main() {
 
     if args.jito {
         let url = "ws://bundles-api-rest.jito.wtf/api/v1/bundles/tip_stream";
-        match connect_async(url).await {
-            Ok((ws_stream, _)) => {
-                let (_, mut read) = ws_stream.split();
-                let tip_clone = Arc::clone(&tip);
-    
-                tokio::spawn(async move {
-                    while let Some(message) = read.next().await {
-                        match message {
-                            Ok(Message::Text(text)) => {
-                                match serde_json::from_str::<Vec<Tip>>(&text) {
-                                    Ok(tips) => {
-                                        for item in tips {
-                                            let mut tip = tip_clone.write().unwrap();
-                                            *tip = (item.landed_tips_50th_percentile * (10_f64).powf(9.0)) as u64;
-                                            println!("Updated tip: {}", *tip); // Debug statement
-                                        }
-                                    },
-                                    Err(err) => eprintln!("Failed to parse tip data: {}", err),
-                                }
-                            },
-                            Err(err) => eprintln!("WebSocket error: {}", err),
-                            _ => (),
+        let (ws_stream, _) = connect_async(url).await.unwrap();
+        let (_, mut read) = ws_stream.split();
+
+        tokio::spawn(async move {
+            while let Some(message) = read.next().await {
+                if let Ok(Message::Text(text)) = message {
+                    if let Ok(tips) = serde_json::from_str::<Vec<Tip>>(&text) {
+                        for item in tips {
+                            let mut tip = tip_clone.write().unwrap();
+                            *tip =
+                                (item.landed_tips_50th_percentile * (10_f64).powf(9.0)) as u64;
                         }
                     }
-                });
-            },
-            Err(err) => eprintln!("Failed to connect to WebSocket: {}", err),
-        }
+                }
+            }
+        });
     }
     
     let miner = Arc::new(Miner::new(
