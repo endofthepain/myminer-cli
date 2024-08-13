@@ -46,9 +46,6 @@ impl Miner {
         let mut last_balance = 0;
         let http_client = Client::new();
         
-        let ore_balance = proof.balance as f64 / 1_000_000_000_000.0;
-        let ore_value_usd = ore_balance * ore_price_usd;
-
         loop {
             let rpc_client_clone = Arc::clone(&self.rpc_client);
             let config = tokio::spawn(async move { get_config(&rpc_client_clone).await }).await.unwrap();
@@ -59,9 +56,13 @@ impl Miner {
             let sol_price_usd = get_solana_price_usd().await.unwrap_or(0.0);
             let ore_price_usd = get_ore_price_usd().await.unwrap_or(0.0);
 
+            // Calculate ORE balance and its value
+            let ore_balance = proof.balance as f64 / 1_000_000_000_000.0;
+            let ore_value_usd = ore_balance * ore_price_usd;
+
             // Create the output message
             let output_message = format!(
-                "{}\n\n{}: {:.9} SOL (approx. ${:.2})\n{}: {:.11} ORE (approx. ${:.2})\n{}  {}: {}",
+                "{}\n\n**{}**: {:.9} SOL (approx. ${:.2})\n**{}**: {:.11} ORE (approx. ${:.2})\n**{}**: {}\n**{}**: {:12}x",
                 "-".repeat(40).bold().cyan(),
                 "SOL Balance".bold().red(),
                 current_sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
@@ -110,44 +111,45 @@ impl Miner {
             if let Some(discord_webhook_url) = &self.discord_webhook {
                 let timestamp = Utc::now().to_rfc3339(); // Get the current timestamp in ISO 8601 format
 
-            // Calculate the change in balance
-            let change_in_balance = proof.balance.saturating_sub(last_balance);
-            let formatted_change = if change_in_balance > 0 {
-                format!("{:.11}", change_in_balance as f64 / 1_000_000_000_000.0) // Format change with 11 decimal places
+                // Calculate the change in balance
+                let change_in_balance = proof.balance.saturating_sub(last_balance);
+                let formatted_change = if change_in_balance > 0 {
+                    format!("{:.11}", change_in_balance as f64 / 1_000_000_000_000.0) // Format change with 11 decimal places
+                } else {
+                    "No Change".to_string()
+                };
+
+                let payload = json!({
+                    "content": format!(
+                        "**{}**\n\n**SOL Balance 🌟**: {:.9} SOL (approx. ${:.2}) 💸\n**ORE Stake 💰**: {:.11} ORE (approx. ${:.2})\n**Change 🔄**: {}\n**Multiplier 📈**: {:12}x",
+                        "-".repeat(40),
+                        current_sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
+                        (current_sol_balance as f64 / 1_000_000_000.0) * sol_price_usd,
+                        ore_balance, // Updated to show 11 decimal places
+                        ore_value_usd,
+                        formatted_change,
+                        calculate_multiplier(proof.balance, config.top_balance)
+                    ),
+                    "timestamp": timestamp
+                });
+
+                if let Err(e) = http_client.post(discord_webhook_url)
+                    .json(&payload)
+                    .send()
+                    .await
+                {
+                    eprintln!("Failed to send Discord webhook: {}", e);
+                }
             } else {
-                "No Change".to_string()
-            };
-
-            let payload = json!({
-                "content": format!(
-                    "**{}**\n\n**SOL Balance 🌟**: {:.9} SOL (approx. ${:.2}) 💸\n**ORE Stake 💰**: {:.11} ORE (approx. ${:.2})\n**Change 🔄**: {}\n**Multiplier 📈**: {:12}x",
-                    "-".repeat(40),
-                    current_sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
-                    (current_sol_balance as f64 / 1_000_000_000.0) * sol_price_usd,
-                    ore_balance, // Updated to show 11 decimal places
-                    ore_value_usd,
-                    formatted_change,
-                    calculate_multiplier(proof.balance, config.top_balance)
-                ),
-                "timestamp": timestamp
-            });
-
-            if let Err(e) = http_client.post(discord_webhook_url)
-                .json(&payload)
-                .send()
-                .await
-            {
-                eprintln!("Failed to send Discord webhook: {}", e);
+                eprintln!("Discord webhook URL is not set");
             }
-        } else {
-            eprintln!("Discord webhook URL is not set");
-        }
 
             self.send_and_confirm(&ixs, ComputeBudget::Fixed(compute_budget), false)
                 .await
                 .ok();
         }
     }
+}
 
     async fn find_hash_par(
         proof: Proof,
