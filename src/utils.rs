@@ -126,6 +126,10 @@ pub async fn get_latest_blockhash_with_retries(
     }
 }
 
+fn format_date_time() -> String {
+    Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
+}
+
 #[cached]
 pub fn proof_pubkey(authority: Pubkey) -> Pubkey {
     Pubkey::find_program_address(&[PROOF, authority.as_ref()], &ore_api::ID).0

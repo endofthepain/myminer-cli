@@ -19,12 +19,13 @@ use solana_sdk::signer::Signer;
 use reqwest::Client;
 use serde_json::json;
 use chrono::Utc;
+use chrono::format::strftime;
 
 use crate::{
     args::MineArgs,
     send_and_confirm::ComputeBudget,
     utils::{
-        get_clock, get_config, get_updated_proof_with_authority, proof_pubkey,
+        format_date_time, get_clock, get_config, get_updated_proof_with_authority, proof_pubkey,
     },
     Miner,
 };
@@ -106,6 +107,9 @@ impl Miner {
             // Send message to Discord webhook
             if let Some(discord_webhook_url) = &self.discord_webhook {
                 let timestamp = Utc::now().to_rfc3339(); // Get the current timestamp in ISO 8601 format
+                let date_time = format_date_time(); // Get formatted date and time
+
+                let pickaxe_line = "⛏️".repeat(40); // Adjust the number as needed
 
                 // Calculate the change in balance
                 let change_in_balance = proof.balance.saturating_sub(last_balance);
@@ -117,8 +121,9 @@ impl Miner {
                 
                 let payload = json!({
                     "content": format!(
-                        "**{}**\n\n**SOL Balance 🌟**: {:.9} SOL (approx. ${:.2}) 💸\n**ORE Stake 💰**: {:.11} ORE (approx. ${:.2})\n**Change 🔄**: {}\n**Multiplier 📈**: {:12}x",
-                        "-".repeat(40),
+                        "**{}**\n\n({})\n\n**SOL Balance 🌟**: {:.9} SOL (approx. ${:.2}) 💸\n**ORE Stake 💰**: {:.11} ORE (approx. ${:.2}) 💸\n**Change 🔄**: {}\n**Multiplier 📈**: {:12}x",
+                        pickaxe_line, // Use pickaxe emojis for the line
+                        date_time, // Insert the formatted date and time here
                         current_sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
                         (current_sol_balance as f64 / 1_000_000_000.0) * sol_price_usd,
                         ore_balance, // Ensure this shows 11 decimal places
