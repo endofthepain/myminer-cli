@@ -1,8 +1,8 @@
-# ORE CLI
+# MYORE CLI
 
-A Modification From Official [ore-cli](https://github.com/regolith-labs/ore-cli).
+A Modification ORE CLI From Official [ore-cli](https://github.com/regolith-labs/ore-cli).
 
-## Install
+## 🚀 Install
 
 To install the CLI, use [cargo](https://doc.rust-lang.org/cargo/getting-started/installation.html):
 
@@ -10,8 +10,8 @@ To install the CLI, use [cargo](https://doc.rust-lang.org/cargo/getting-started/
 cargo install myore-cli
 ```
 
+### 🛠️ Dependencies
 
-### Dependencies
 If you run into issues during installation, please install the following dependencies for your operating system and try again:
 
 #### Linux
@@ -34,7 +34,7 @@ export CPPFLAGS="-I/usr/local/opt/openssl/include"
 choco install openssl pkgconfiglite
 ```
 
-## Build
+## 🔨 Build
 
 To build the codebase from scratch, checkout the repo and use cargo to build:
 
@@ -42,10 +42,20 @@ To build the codebase from scratch, checkout the repo and use cargo to build:
 cargo build --release
 ```
 
-## Help
+## 📖 Help
 
 You can use the `-h` flag on any command to pull up a help menu with documentation:
 
 ```sh
-ore -h
+myore -h
 ```
+
+## ☕ Support
+
+If you find this project useful and would like to support its development, consider buying me a coffee:
+
+```
+Solana Address: 27Tw4MutGD9M2u1biQw4B6J3b6mfB98yCbpZuu8PzoTG
+```
+
+Thank you for your support!

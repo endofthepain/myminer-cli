@@ -1,4 +1,8 @@
-use std::{sync::Arc, sync::RwLock, time::Instant};
+use std::{sync::Arc, sync::atomic::{AtomicU64, AtomicU32, Ordering}, time::Instant};
+use std::thread;
+use std::sync::mpsc::channel;
+use std::time::Duration;
+
 use colored::*;
 use drillx::{
     equix::{self},
@@ -13,251 +17,269 @@ use rand::Rng;
 use solana_program::pubkey::Pubkey;
 use solana_rpc_client::spinner;
 use solana_sdk::signer::Signer;
-use num_cpus;
+use reqwest::Client;
+use serde_json::json;
+use chrono::Utc;
 
 use crate::{
     args::MineArgs,
     send_and_confirm::ComputeBudget,
     utils::{
-        amount_u64_to_string, get_clock, get_config, get_updated_proof_with_authority, proof_pubkey,
+        format_date_time, get_clock, get_config, get_updated_proof_with_authority, proof_pubkey,
     },
     Miner,
 };
 
+use crate::price_fetcher::{get_solana_price_usd, get_ore_price_usd};
+
 impl Miner {
     pub async fn mine(&self, args: MineArgs) {
-        // Register, if needed.
         let signer = self.signer();
         self.open().await;
-
-        // Check number of cores
+    
         self.check_num_cores(args.cores);
-
-        // Initialize variables
+    
         let mut last_hash_at = 0;
         let mut last_balance = 0;
-
-        // Start mining loop
+        let http_client = Client::new();
+    
         loop {
-            // Fetch proof
-            let config = get_config(&self.rpc_client).await;
-            let proof =
-                get_updated_proof_with_authority(&self.rpc_client, signer.pubkey(), last_hash_at)
-                    .await;
-            last_hash_at = proof.last_hash_at;
-
-            // Apply dynamic fee logic
-            let priority_fee = if self.dynamic_fee {
-                // Calculate dynamic fee, ensuring it doesn't exceed dynamic_fee_max
-                let dynamic_fee = self.calculate_dynamic_fee().await;
-                if let Some(max_fee) = self.dynamic_fee_max {
-                    dynamic_fee.min(max_fee)
+            // Fetch configuration and proof
+            let rpc_client_clone = Arc::clone(&self.rpc_client);
+            let config = tokio::spawn(async move { get_config(&rpc_client_clone).await }).await.unwrap();
+            let proof = get_updated_proof_with_authority(&self.rpc_client, signer.pubkey(), last_hash_at).await;
+    
+            // Fetch the current Sol balance and prices
+            let current_sol_balance = self.rpc_client.get_balance(&signer.pubkey()).await.unwrap_or(0);
+            let sol_price_usd = get_solana_price_usd().await.unwrap_or(0.0);
+            let ore_price_usd = get_ore_price_usd().await.unwrap_or(0.0);
+    
+            // Calculate ORE balance and its value
+            let ore_balance = proof.balance as f64 / 100_000_000_000.0;
+            let ore_value_usd = ore_balance * ore_price_usd;
+    
+            // Create the output message
+            let output_message = format!(
+                "{}\n\n{}: {:.9} SOL (approx. ${:.2}) 💸\n{}: {} ORE (approx. ${:.2}) 💰\n{}  {}: {:12}x",
+                "-".repeat(40).bold().cyan(),
+                "SOL Balance".bold().red(),
+                current_sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
+                (current_sol_balance as f64 / 1_000_000_000.0) * sol_price_usd,
+                "ORE Stake".bold().yellow(),
+                ore_balance, // Updated to show 11 decimal places
+                ore_value_usd,
+                if last_hash_at > 0 {
+                    format!(
+                        "{}{}: {:.11} ORE\n",
+                        " ".repeat(4), "Change".bold().green(),
+                        (proof.balance.saturating_sub(last_balance) as f64 / 100_000_000_000.0)                    )
                 } else {
-                    dynamic_fee
-                }
-            } else {
-                self.priority_fee.unwrap_or(0)
-            };
-
-            // Calculate the total compute budget, including the priority fee
-            let compute_budget = 500_000 + priority_fee;
+                    "No Change".to_string()
+                },
+                "Multiplier".bold().magenta(),
+                calculate_multiplier(proof.balance, config.top_balance)
+            );
+    
+            // Print the formatted output
+            println!("{}", output_message);
+    
+            last_hash_at = proof.last_hash_at;
+            last_balance = proof.balance;
+    
+            let cutoff_time = self.get_cutoff(proof, args.buffer_time).await;
+    
+            let solution = Self::find_hash_par(proof, cutoff_time, args.cores, config.min_difficulty as u32).await;
+    
             let mut ixs = vec![ore_api::instruction::auth(proof_pubkey(signer.pubkey()))];
+            let mut compute_budget = 500_000;
             if self.should_reset(config).await && rand::thread_rng().gen_range(0..100) == 0 {
+                compute_budget += 100_000;
                 ixs.push(ore_api::instruction::reset(signer.pubkey()));
             }
-
-            let (solution, hash_rate) = Self::find_hash_par(
-                proof,
-                self.get_cutoff(proof, args.buffer_time).await,
-                args.cores,
-                args.min_difficulty // Ensure min_difficulty is used here
-            ).await;
-
+    
             ixs.push(ore_api::instruction::mine(
                 signer.pubkey(),
                 signer.pubkey(),
                 self.find_bus().await,
                 solution,
             ));
-
-            // Submit transaction
-            let _result = self.send_and_confirm(
-                &ixs,
-                ComputeBudget::Fixed(compute_budget.try_into().unwrap()),
-                false,
-            )
-            .await;
-
-            // Fetch SOL balance
-            let sol_balance = match self.fetch_sol_balance().await {
-                Ok(balance) => balance,
-                Err(_) => {
-                    println!("Failed to fetch SOL balance.");
-                    return;
+    
+            // Send message to Discord webhook
+            if let Some(discord_webhook_url) = &self.discord_webhook {
+                let timestamp = Utc::now().to_rfc3339(); // Get the current timestamp in ISO 8601 format
+                let date_time = format_date_time(); // Get formatted date and time
+    
+                let pickaxe_line = "⛏️".repeat(3); // Adjust the number as needed
+    
+                let payload = json!({
+                    "content": format!(
+                        "**{}**\n\n({})\n\n**SOL Balance 🌟**: {:.9} SOL (approx. ${:.2}) 💸\n**ORE Stake 💰**: {:.11} ORE (approx. ${:.2}) 💸\n**Multiplier 📈**: {:12}x",
+                        pickaxe_line, // Use pickaxe emojis for the line
+                        date_time, // Insert the formatted date and time here
+                        current_sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
+                        (current_sol_balance as f64 / 1_000_000_000.0) * sol_price_usd,
+                        ore_balance, // Ensure this shows 11 decimal places
+                        ore_value_usd,
+                        calculate_multiplier(proof.balance, config.top_balance)
+                    ),
+                    "timestamp": timestamp // Ensure this is included
+                });
+    
+                if let Err(e) = http_client.post(discord_webhook_url)
+                    .json(&payload)
+                    .send()
+                    .await
+                {
+                    eprintln!("Failed to send Discord webhook: {}", e);
                 }
-            };
-                        
-            // Print mining status
-            println!(
-                "\n{}: {:.9} SOL\n{}: {}\n{}: {}",
-                "SOL BALANCE".white().bold(),
-                sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
-                "ORE Stake".white().bold(),
-                amount_u64_to_string(proof.balance).yellow(),
-                "Change".white().bold(),
-                amount_u64_to_string(proof.balance.saturating_sub(last_balance)).green()
-            );
-            println!(
-                "{}: {:12}x\n{}: {:.2} H/S",
-                "Multiplier".white().bold(),
-                format!("{:12}", Self::calculate_multiplier(proof.balance, config.top_balance)).blue(),
-                "Hash".white().bold(),
-                hash_rate as f64
-            );
-
-            last_balance = proof.balance;
+            } else {
+                eprintln!("Discord webhook URL is not set");
+            }
+    
+            // Attempt to send and confirm transaction
+            let result = self.send_and_confirm(
+                &ixs,
+                ComputeBudget::Fixed(compute_budget),
+                false,
+            ).await;
+    
+            match result {
+                Ok(signature) => {
+                    println!("Transaction confirmed: {}", signature);
+                }
+                Err(e) => {
+                    println!("Transaction failed: {:?}", e);
+                    // Continue mining after error
+                }
+            }
+    
+            // Add delay between mining cycles if needed
+            tokio::time::sleep(Duration::from_secs(0)).await;
         }
-    }
-
-    async fn fetch_sol_balance(&self) -> Result<u64, solana_client::client_error::ClientError> {
-        let pubkey = self.signer().pubkey();
-        let balance = self.rpc_client.get_balance(&pubkey).await?;
-        Ok(balance)
-    }
-
-    async fn calculate_dynamic_fee(&self) -> u64 {
-        let response = reqwest::get(self.dynamic_fee_url.as_ref().unwrap())
-            .await
-            .unwrap()
-            .text()
-            .await
-            .unwrap();
-
-        response.parse::<u64>().unwrap_or(0)
     }
 
     async fn find_hash_par(
         proof: Proof,
-        cutoff_time: u64,
+        mut cutoff_time: u64,
         cores: u64,
         min_difficulty: u32,
-    ) -> (Solution, u64) {
-        // Dispatch job to each thread
+    ) -> Solution {
+        let (tx, rx) = channel();
         let progress_bar = Arc::new(spinner::new_progress_bar());
+        let global_best_difficulty = Arc::new(AtomicU32::new(0));
+        let global_total_hashes = Arc::new(AtomicU64::new(0));
         progress_bar.set_message("Mining...");
-        let core_ids = core_affinity::get_core_ids().unwrap_or_else(|| {
-            panic!("Failed to get core IDs");
-        });
-        let global_best_difficulty = Arc::new(RwLock::new(0u32));
-        let handles: Vec<_> = core_ids
-            .into_iter()
-            .map(|i| {
-                let global_best_difficulty = Arc::clone(&global_best_difficulty);
-                std::thread::spawn({
-                    let proof = proof.clone();
-                    let progress_bar = progress_bar.clone();
-                    let mut memory = equix::SolverMemory::new();
-                    move || {
-                        if (i.id as u64) >= cores {
-                            return (0, 0, Hash::default(), 0);
-                        }
-
-                        let _ = core_affinity::set_for_current(i);
-
-                        let timer = Instant::now();
-                        let mut nonce = u64::MAX.saturating_div(cores).saturating_mul(i.id as u64);
-                        let mut best_nonce = nonce;
-                        let mut best_difficulty = 0;
-                        let mut best_hash = Hash::default();
-                        let mut hash_count = 0;
-                        loop {
-                            if let Ok(hx) = drillx::hash_with_memory(
-                                &mut memory,
-                                &proof.challenge,
-                                &nonce.to_le_bytes(),
-                            ) {
-                                hash_count += 1;
-                                let difficulty = hx.difficulty();
-                                if difficulty > best_difficulty {
-                                    best_nonce = nonce;
-                                    best_difficulty = difficulty;
-                                    best_hash = hx;
-                                    let mut global_best = global_best_difficulty.write().unwrap();
-                                    if best_difficulty > *global_best {
-                                        *global_best = best_difficulty;
-                                    }
-                                }
+    
+        let start_time = Instant::now();
+    
+        // Use available cores or the provided value, whichever is smaller
+        let num_threads = std::cmp::min(cores, num_cpus::get() as u64);
+    
+        for i in 0..num_threads {
+            let tx = tx.clone();
+            let global_best_difficulty = Arc::clone(&global_best_difficulty);
+            let global_total_hashes = Arc::clone(&global_total_hashes);
+            let proof = proof.clone();
+            let progress_bar = progress_bar.clone();
+    
+            thread::spawn(move || {
+                let mut memory = equix::SolverMemory::new();
+                let timer = Instant::now();
+                let mut nonce = u64::MAX.saturating_div(num_threads).saturating_mul(i);
+                let mut best_nonce = nonce;
+                let mut best_difficulty = 0;
+                let mut best_hash = Hash::default();
+                
+                loop {
+                    if let Ok(hx) = drillx::hash_with_memory(
+                        &mut memory,
+                        &proof.challenge,
+                        &nonce.to_le_bytes(),
+                    ) {
+                        let difficulty = hx.difficulty();
+                        if difficulty.gt(&best_difficulty) {
+                            best_nonce = nonce;
+                            best_difficulty = difficulty;
+                            best_hash = hx;
+    
+                            let prev_best_difficulty = global_best_difficulty.fetch_max(best_difficulty, Ordering::Relaxed);
+                            
+                            if best_difficulty > prev_best_difficulty {
+                                cutoff_time += 00;
                             }
-
-                            if nonce % 100 == 0 {
-                                let global_best_difficulty = *global_best_difficulty.read().unwrap();
-                                if timer.elapsed().as_secs() >= cutoff_time {
-                                    if i.id == 0 {
-                                        progress_bar.set_message(format!(
-                                            "Mining... (difficulty {})",
-                                            global_best_difficulty,
-                                        ));
-                                    }
-                                    if global_best_difficulty >= min_difficulty {
-                                        break;
-                                    }
-                                } else if i.id == 0 {
-                                    progress_bar.set_message(format!(
-                                        "Mining... (difficulty {}, time {})",
-                                        global_best_difficulty,
-                                        Self::format_duration(
-                                            (cutoff_time.saturating_sub(timer.elapsed().as_secs())) as u32
-                                        ),
-                                    ));
-                                }
-                            }
-
-                            nonce += 1;
                         }
-
-                        (best_nonce, best_difficulty, best_hash, hash_count)
                     }
-                })
-            })
-            .collect();
-
+    
+                    global_total_hashes.fetch_add(1, Ordering::Relaxed);
+    
+                    if nonce % 100 == 0 {
+                        let global_best_difficulty = global_best_difficulty.load(Ordering::Relaxed);
+                        let total_hashes = global_total_hashes.load(Ordering::Relaxed);
+                        let elapsed_time = start_time.elapsed().as_secs_f64();
+                        let hash_rate = total_hashes as f64 / elapsed_time;
+    
+                        if timer.elapsed().as_secs() >= cutoff_time {
+                            if i == 0 {
+                                progress_bar.set_message(format!(
+                                    "Mining... (difficulty {}, time {}, {:.2} H/s)",
+                                    global_best_difficulty,
+                                    format_duration(cutoff_time.saturating_sub(timer.elapsed().as_secs()) as u32),
+                                    hash_rate,
+                                ));
+                            }
+                            if global_best_difficulty >= min_difficulty {
+                                break;
+                            }
+                        } else if i == 0 {
+                            progress_bar.set_message(format!(
+                                "Mining... (difficulty {}, time {}, {:.2} H/s)",
+                                global_best_difficulty,
+                                format_duration(cutoff_time.saturating_sub(timer.elapsed().as_secs()) as u32),
+                                hash_rate,
+                            ));
+                        }
+                    }
+    
+                    nonce += 1;
+                }
+    
+                tx.send((best_nonce, best_difficulty, best_hash)).unwrap();
+            });
+        }
+    
         let mut best_nonce = 0;
         let mut best_difficulty = 0;
         let mut best_hash = Hash::default();
-        let mut total_hash_count = 0;
-        for h in handles {
-            if let Ok((nonce, difficulty, hash, hash_count)) = h.join() {
-                total_hash_count += hash_count;
-                if difficulty > best_difficulty {
-                    best_difficulty = difficulty;
-                    best_nonce = nonce;
-                    best_hash = hash;
-                }
+    
+        for _ in 0..num_threads {
+            let (nonce, difficulty, hash) = rx.recv().unwrap();
+            if difficulty > best_difficulty {
+                best_difficulty = difficulty;
+                best_nonce = nonce;
+                best_hash = hash;
             }
         }
-
-        let hash_rate = if cutoff_time > 0 {
-            total_hash_count as u64 / cutoff_time
-        } else {
-            0 // Default to 0 if cutoff_time is zero to avoid division by zero
-        };
-
+    
+        let total_hashes = global_total_hashes.load(Ordering::Relaxed);
+        let elapsed_time = start_time.elapsed().as_secs_f64();
+        let hash_rate = total_hashes as f64 / elapsed_time;
+    
         progress_bar.finish_with_message(format!(
-            "Best hash: {} (difficulty {})",
+            "Best Hash: {} (difficulty {}, {:.2} H/s)",
             bs58::encode(best_hash.h).into_string(),
-            best_difficulty
+            best_difficulty,
+            hash_rate,
         ));
-
-        (Solution::new(best_hash.d, best_nonce.to_le_bytes()), hash_rate)
-    }
-
+    
+        Solution::new(best_hash.d, best_nonce.to_le_bytes())
+    }        
+    
     pub fn check_num_cores(&self, cores: u64) {
         let num_cores = num_cpus::get() as u64;
-        if cores > num_cores {
+        if cores.gt(&num_cores) {
             println!(
-                "{} Number of threads ({}) exceeds available cores ({})",
-                "WARNING".bold().red(),
-                cores,
+                "{} Cannot exceed available cores ({})",
+                "WARNING".bold().yellow(),
                 num_cores
             );
         }
@@ -268,7 +290,7 @@ impl Miner {
         config
             .last_reset_at
             .saturating_add(EPOCH_DURATION)
-            .saturating_sub(5) // Buffer
+            .saturating_sub(5)
             .le(&clock.unix_timestamp)
     }
 
@@ -283,7 +305,6 @@ impl Miner {
     }
 
     async fn find_bus(&self) -> Pubkey {
-        // Fetch the bus with the largest balance
         if let Ok(accounts) = self.rpc_client.get_multiple_accounts(&BUS_ADDRESSES).await {
             let mut top_bus_balance: u64 = 0;
             let mut top_bus = BUS_ADDRESSES[0];
@@ -300,18 +321,17 @@ impl Miner {
             return top_bus;
         }
 
-        // Otherwise return a random bus
         let i = rand::thread_rng().gen_range(0..BUS_COUNT);
         BUS_ADDRESSES[i]
     }
+}
 
-    fn calculate_multiplier(balance: u64, top_balance: u64) -> f64 {
-        1.0 + (balance as f64 / top_balance as f64).min(1.0f64)
-    }
+fn calculate_multiplier(balance: u64, top_balance: u64) -> f64 {
+    1.0 + (balance as f64 / top_balance as f64).min(1.0f64)
+}
 
-    fn format_duration(seconds: u32) -> String {
-        let minutes = seconds / 60;
-        let remaining_seconds = seconds % 60;
-        format!("{:02}:{:02}", minutes, remaining_seconds)
-    }
+fn format_duration(seconds: u32) -> String {
+    let minutes = seconds / 60;
+    let remaining_seconds = seconds % 60;
+    format!("{:02}:{:02}", minutes, remaining_seconds)
 }
