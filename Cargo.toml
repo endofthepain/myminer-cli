@@ -9,7 +9,7 @@ readme = "./README.md"
 keywords = ["solana", "crypto", "mining"]
 
 [[bin]]
-name = "myccoal"
+name = "mycoal"
 path = "src/main.rs"
 
 [features]
