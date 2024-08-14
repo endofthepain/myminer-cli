@@ -11,6 +11,7 @@ cargo install myore-cli
 ```
 
 ### 🛠️ Dependencies
+
 If you run into issues during installation, please install the following dependencies for your operating system and try again:
 
 #### Linux
