@@ -46,5 +46,15 @@ cargo build --release
 You can use the `-h` flag on any command to pull up a help menu with documentation:
 
 ```sh
-ore -h
+myore -h
 ```
+
+## ☕ Support
+
+If you find this project useful and would like to support its development, consider buying me a coffee:
+
+```
+Solana Address: 27Tw4MutGD9M2u1biQw4B6J3b6mfB98yCbpZuu8PzoTG
+```
+
+Thank you for your support!
