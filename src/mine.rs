@@ -113,7 +113,7 @@ impl Miner {
     
                 let payload = json!({
                     "content": format!(
-                        "**Mining Update**\n\n({})\n\n**SOL Balance 🌟**: {:.9} SOL (approx. ${:.2}) 💸\n**ORE Stake 💰**: {:.11} ORE (approx. ${:.2}) 💸\n**Multiplier 📈**: {:12}x",
+                        "**{}**\n\n({})\n\n**SOL Balance 🌟**: {:.9} SOL (approx. ${:.2}) 💸\n**ORE Stake 💰**: {:.11} ORE (approx. ${:.2}) 💸\n**Multiplier 📈**: {:12}x",
                         pickaxe_line, // Use pickaxe emojis for the line
                         date_time, // Insert the formatted date and time here
                         current_sol_balance as f64 / 1_000_000_000.0, // Convert lamports to SOL
