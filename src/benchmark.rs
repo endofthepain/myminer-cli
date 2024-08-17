@@ -20,8 +20,10 @@ impl Miner {
             TEST_DURATION
         ));
         let core_ids = core_affinity::get_core_ids().unwrap();
+        let core_num = heim_cpu::logical_count().await.unwrap();
         let handles: Vec<_> = core_ids
             .into_iter()
+            .take(args.cores as usize)
             .map(|i| {
                 std::thread::spawn({
                     move || {
@@ -29,15 +31,6 @@ impl Miner {
                         let first_nonce = u64::MAX
                             .saturating_div(args.cores)
                             .saturating_mul(i.id as u64);
-                        let mut nonce = first_nonce;
-                        let mut memory = equix::SolverMemory::new();
-                        loop {
-                            // Return if core should not be used
-                            if (i.id as u64).ge(&args.cores) {
-                                return 0;
-                            }
-
-                            // Pin to core
                             let _ = core_affinity::set_for_current(i);
 
                             // Create hash

@@ -173,8 +173,8 @@ impl Miner {
         let start_time = Instant::now();
     
         // Use available cores or the provided value, whichever is smaller
-        let num_threads = std::cmp::min(cores, num_cpus::get() as u64);
-    
+        let num_threads = std::cmp::min(cores, heim_cpu::get() as u64);
+
         for i in 0..num_threads {
             let tx = tx.clone();
             let global_best_difficulty = Arc::clone(&global_best_difficulty);
@@ -275,7 +275,7 @@ impl Miner {
     }        
     
     pub fn check_num_cores(&self, cores: u64) {
-        let num_cores = num_cpus::get() as u64;
+        let num_cores = heim_cpu::get() as u64;
         if cores.gt(&num_cores) {
             println!(
                 "{} Cannot exceed available cores ({})",
