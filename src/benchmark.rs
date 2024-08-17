@@ -9,7 +9,7 @@ const TEST_DURATION: i64 = 30;
 
 impl Miner {
     pub async fn benchmark(&self, args: BenchmarkArgs) {
-        // Check num cores
+        // Check num threads
         self.check_num_cores(args.cores);
 
         // Dispatch job to each thread
@@ -29,10 +29,15 @@ impl Miner {
                     move || {
                         let timer = Instant::now();
                         let first_nonce = u64::MAX
-                            .saturating_div(args.cores)
+                            .saturating_div(core_num)
                             .saturating_mul(i.id as u64);
-                            let _ = core_affinity::set_for_current(i);
+                        let mut nonce = first_nonce;
+                        let mut memory = equix::SolverMemory::new();
 
+                        // Pin to core
+                        let _ = core_affinity::set_for_current(i);
+
+                        loop {
                             // Create hash
                             let _hx = drillx::hash_with_memory(
                                 &mut memory,
