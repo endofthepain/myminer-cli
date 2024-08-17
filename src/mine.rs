@@ -2,6 +2,7 @@ use std::{sync::Arc, sync::atomic::{AtomicU64, AtomicU32, Ordering}, time::Insta
 use std::thread;
 use std::sync::mpsc::channel;
 use std::time::Duration;
+use num_cpus::get;
 
 use colored::*;
 use drillx::{
